@@ -1,6 +1,6 @@
 {
   "name": "no-subagent-popup",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Hermes Desktop companion patch and plugin for inline live subagents",

@@ -7,11 +7,11 @@
     },
     "src/app/chat/sidebar/running-subagent-rows.tsx": {
       "before": null,
-      "after": "9228613c1212b24033ae84b206746f61ea361dc3c7142522d7790904aa988ee1"
+      "after": "9616005bfe899b55a1ddd050b49f48c84d863feda1b276d09f6f7f9011e2254d"
     },
     "src/app/chat/sidebar/session-row.tsx": {
       "before": "6bbb484972a203a533175b2597c7a5205f5792ca46115a043ac89e471545f3c1",
-      "after": "d64cb49ecf1449f2a7a6748335c034f018ecfaafce8794d49d35ed9480913652"
+      "after": "16beffad475d4872784ee4eb2286272020c564c3a96a70077ea3d6befb7b7243"
     },
     "src/app/session/hooks/use-session-actions/index.ts": {
       "before": "df52951c1e79d70645d04c284a12f612bc2cd75930e2946dc2c5b8f6b56fbbf7",
@@ -27,7 +27,7 @@
     },
     "src/lib/no-subagent-popup-model.ts": {
       "before": null,
-      "after": "a93feaf94964499a1c7681b7fe87dd950fc4f32984ed8c1769ad6be5325d2c63"
+      "after": "30181e27ba3b7235922f3caa3e1b906e46a02c374834b88110bdb2a67516a5b4"
     },
     "src/lib/no-subagent-popup.ts": {
       "before": null,
@@ -64,6 +64,18 @@
     "src/lib/no-subagent-popup-history.ts": {
       "before": null,
       "after": "ba3a0ad93f43b222265e81d5a44715643a00a24daebb6a05ab7116542fd0ec5a"
+    },
+    "src/app/chat/sidebar/parent-subagents.ts": {
+      "before": null,
+      "after": "f904ea1c2e63a3f7cc7f3b2e101e26fc118b7923b8a1589ca40ca23af72c7a32"
+    },
+    "src/app/chat/sidebar/parent-subagents.test.tsx": {
+      "before": null,
+      "after": "8c5cc84cd3ebc475da056bfc409cbd47f8189a5be6d77a9ec57f2bcf53b1e78d"
+    },
+    "src/app/chat/sidebar/sessions-section.tsx": {
+      "before": "154f937b73d8e30125c2f8a6507960163efc71c7d8a5b53a7ff9bd6ac1ca69b9",
+      "after": "51f65f1c45bc285d8a8caffd7269e266feb7177f5400ba98a0e88491ceab578b"
     }
   }
 }

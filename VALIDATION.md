@@ -1,28 +1,31 @@
-# Validation status
+# v0.1.3 validation status
 
-This is a source-development preview, not a verified release or a deployed fix.
+Source preview, not a deployed or signed release.
 
-## Rechecked for publication
+## Verified in this refactor
 
-- Dependency-free project suite: 11 tests passed (`node --test tests/*.test.mjs`).
-- Plugin and source-patching script syntax checks passed.
-- All 16 source-overlay entries matched the existing v0.1.2 checksum manifest before duplicate-row refactoring.
-- The NFS-backed project directory was verified. A similarly named local directory is not the project mount and was not used as the publication source.
-- The personal GitHub account was authenticated and repository creation read back. No credentials, machine-specific inventories, logs, binary packages or install-state files belong in the repository.
+- Full desktop TypeScript typecheck passed in a separate Windows worktree at the pinned upstream commit.
+- Targeted Vitest UI/history suite: **48 tests passed across 5 files**. Includes 6 new deduplication hook/component cases, 9 dotted-row tests, 13 existing session-row tests, 12 history tests and 8 delegation-card tests.
+- Dependency-free project suite: **18 tests passed**, including 7 new pure deduplication cases.
+- Plugin and patch-script syntax checks passed.
+- All **19 overlay files** were checked, applied, checked again, reverted and checked against the actual pinned upstream source. Updated source checksum manifest and unified patch were generated from that source.
+- Owner-guard mutation check: deliberately removing owner isolation caused the cross-connection and cross-profile tests to fail. The mutant was not shipped.
+- Source scan before initial publication found no credential, private-key, private-IP or personalized Windows-path matches.
 
-## Earlier evidence — not a new live acceptance test
+## What changed
 
-Earlier v0.1.2 Windows build output reported successful typechecking, Node tests, packaging and patch-marker checks, with a 1,173-file package inventory. That package was staged separately. The installed ASAR was subsequently verified to remain the earlier v0.1.1 tracked version.
+The dotted-row renderer and ordinary-session filter now share `selectParentSubagents`. The list filter requires an exact child transcript/lineage ID and matching connection/profile. Filtering happens before branch flattening, grouping and virtualization in all four section rendering paths. Collapsing the dotted group does not reveal the duplicate tree row. Plugin disable restores ordinary rows. Child-only search lists and unrelated sessions remain accessible.
 
-Running-child same-window navigation was user-confirmed. Completed-child navigation was subsequently reported broken. A passing model or fixture test must not be presented as evidence that completed cards work in the installed app.
+Terminal children leave the dotted live group. Saved sessions are not deleted or globally hidden and can remain in the ordinary history list once no dotted row represents them.
 
-## Open
+## In progress / open
 
-- Remove duplicate lower tree-style subagent session rows while keeping dotted live children.
-- Run the new duplicate-row regression suite and source apply/revert checks.
-- Build and package the final deduplicated source in isolation.
-- Reopen the installed candidate interactively and validate same-window navigation, read-only viewing, parent return, and completion cleanup.
-- Historical completed cards without saved exact child-session mappings remain unresolved. Separate backend/frontend contract work is not included as a completed fix here.
-- Long-list performance and extended reconnect behavior are not verified.
+- An isolated desktop build and additional session-section tests are running; success is not claimed yet.
+- No packaged v0.1.3 installer or signed release has been produced.
+- No running GUI was stopped/replaced. Live installed-app visual acceptance remains pending.
+- Historical completed cards without exact saved mappings remain a separate unresolved issue. The separate backend/frontend contract candidate is not silently included as a completed fix.
+- Long-list performance, extended offline/reconnect behavior and real OS window counts remain unverified.
 
-No signed release is published. No running GUI has been stopped or replaced by this publication process.
+## Test limitations
+
+The UI suite exercises real React components/hooks with controlled stores and mocked navigation/snapshot bridges; it does not prove a real installed Electron window loaded the changes. Node emitted an experimental localStorage warning, and existing session-row tests emitted React `act(...)` warnings; all listed assertions passed.

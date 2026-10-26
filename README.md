@@ -2,14 +2,15 @@
 
 A version-checked Hermes Desktop refactor with a companion desktop plugin.
 
-> **Development preview — not a verified release.** The source is published for review. The installed app was last verified as v0.1.1; v0.1.2 was built separately. Live UI acceptance is incomplete. Sidebar duplicate-row cleanup is in progress, and historical completed cards without saved child-session links remain unresolved.
+> **v0.1.3 source preview — not a verified installed release.** Duplicate live-child tree rows are filtered while preserving the dotted entries. Typechecking, 48 UI/history tests, 18 project tests and source apply/revert checks passed. An isolated desktop build is in progress. Your running app has not been replaced. Historical completed cards without saved child-session links remain unresolved.
 
 Project: https://github.com/ErtzFiend/no-subagent-popup (private development repository).
 
 ## Intended behavior
 
 - Live (`running` or `queued`) delegated children appear in collapsible dropdowns immediately beneath their own parent in the main Sessions sidebar.
-- Completed, failed and interrupted children disappear from the sidebar automatically; their original delegation cards remain in history.
+- While a live child has a dotted entry under a parent in the same list, its duplicate ordinary tree row is suppressed. Matching requires exact child transcript identity and the same connection/profile; orphaned search results and unrelated sessions are retained.
+- Completed, failed and interrupted children leave the dotted live group automatically. Their saved session/history remains accessible through the normal session list where available.
 - Clicking either a sidebar child or an existing delegation card opens the child's transcript **in the current pane/window**.
 - Child viewing remains **read-only**: the existing spectator/lazy-resume path is retained, not a second agent run. Parent conversations keep their cached state.
 - Disable the companion plugin to restore the original sidebar and popup behavior. Already-open spectators remain read-only for safety.

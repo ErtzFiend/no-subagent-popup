@@ -2,10 +2,10 @@ import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 
 import { useSubagentSnapshot } from '@/app/chat/composer/status-stack/use-subagent-snapshot'
-import { liveChildren, parentOwnerMatches, parentRuntimeIds } from '@/lib/no-subagent-popup-model'
+import { selectParentSubagents } from './parent-subagents'
 import { openSubagentInCurrentWindow } from '@/lib/open-subagent-in-current-window'
-import { $activeSessionId, $selectedStoredSessionId, $sessions, lineageAliases, sessionOwnerRouteFromRow } from '@/store/session'
-import { $sessionStates, $sessionTiles, runtimeSessionOwner } from '@/store/session-states'
+import { $activeSessionId, $selectedStoredSessionId, $sessions, sessionOwnerRouteFromRow } from '@/store/session'
+import { $sessionStates, $sessionTiles } from '@/store/session-states'
 import { $subagentsBySession, buildSubagentTree, type SubagentNode } from '@/store/subagents'
 import type { SessionInfo } from '@/types/hermes'
 
@@ -17,17 +17,8 @@ export function RunningSubagentRows({ session }: { session: SessionInfo }) {
   const selectedId = useStore($selectedStoredSessionId)
   const sessions = useStore($sessions)
   const [expanded, setExpanded] = useState(true)
-  const aliases = lineageAliases(session._lineage_root_id || session.id, [...sessions, session])
   const ownerRoute = sessionOwnerRouteFromRow(session)
-  const expectedOwner = { connectionId: session.connection_id, profile: session.profile }
-  const runtimeIds = parentRuntimeIds(aliases, states, tiles, activeId, selectedId, id => {
-    const tile = tiles.find(item => item.runtimeId === id)
-    return parentOwnerMatches(expectedOwner, runtimeSessionOwner(id) ?? tile?.ownerRoute ?? tile?.ownerProfile)
-  })
-  const children = liveChildren(runtimeIds.map(id => all[id] ?? []))
-  const runtimeId = runtimeIds.find(id => Boolean(states[id])) ??
-    tiles.find(tile => tile.runtimeId && runtimeIds.includes(tile.runtimeId))?.runtimeId ??
-    (activeId && runtimeIds.includes(activeId) ? activeId : null)
+  const { children, runtimeId } = selectParentSubagents(session, sessions, states, tiles, activeId, selectedId, all)
   useSubagentSnapshot(runtimeId, children.length > 0)
   if (!children.length) return null
 

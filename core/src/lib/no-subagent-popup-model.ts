@@ -56,3 +56,31 @@ export function parentRuntimeIds(
   if (selectedId && aliases.includes(selectedId) && activeId) ids.add(activeId)
   return [...ids].filter(acceptRuntime)
 }
+
+interface SidebarChildSession {
+  id: string
+  _lineage_root_id?: string | null
+  _lineage_ids?: string[] | null
+  connection_id?: string | null
+  profile?: string | null
+}
+
+/** Keep the dotted representation only when this same list contains its parent.
+ * No title/goal/index heuristics: exact transcript identity and owner must agree.
+ * Orphaned, searched-for, or cross-owner sessions remain accessible normally.
+ */
+export function duplicateChildRows<T extends SidebarChildSession>(
+  sessions: T[],
+  childrenFor: (parent: T) => readonly RunningChild[]
+): T[] {
+  const represented = sessions.map(parent => ({ parent, children: childrenFor(parent) }))
+  return sessions.filter(candidate => !represented.some(({ parent, children }) => {
+    if (parent === candidate || !parentOwnerMatches(
+      { connectionId: candidate.connection_id, profile: candidate.profile },
+      { connectionId: parent.connection_id, profile: parent.profile }
+    )) return false
+    const aliases = new Set([candidate.id, candidate._lineage_root_id, ...(candidate._lineage_ids ?? [])].filter(Boolean))
+    return children.some(child => (child.status === 'running' || child.status === 'queued') &&
+      Boolean(child.sessionId && aliases.has(child.sessionId)))
+  }))
+}
