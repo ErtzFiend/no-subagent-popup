@@ -1,0 +1,9 @@
+{
+  "name": "no-subagent-popup",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "description": "Hermes Desktop companion patch and plugin for inline live subagents",
+  "scripts": { "test": "node --test tests/*.test.mjs", "check": "node --check plugin.js && node --check scripts/patch-desktop.mjs" },
+  "engines": { "node": ">=22.18.0" }
+}

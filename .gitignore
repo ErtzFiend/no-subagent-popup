@@ -1,0 +1,5 @@
+node_modules/
+artifacts/
+*.log
+.no-subagent-popup-state.json
+package-manifest.json

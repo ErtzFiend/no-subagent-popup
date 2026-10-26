@@ -1,0 +1,69 @@
+{
+  "baseCommit": "12e4d3e2dd5281adf289f70e5d6c7f33427d6982",
+  "files": {
+    "src/app/chat/sidebar/running-subagent-rows.test.tsx": {
+      "before": null,
+      "after": "2d17fec2da563da9043880bc8d04083a15e2d36177b7c9eb7952beeafb1bd9f9"
+    },
+    "src/app/chat/sidebar/running-subagent-rows.tsx": {
+      "before": null,
+      "after": "9228613c1212b24033ae84b206746f61ea361dc3c7142522d7790904aa988ee1"
+    },
+    "src/app/chat/sidebar/session-row.tsx": {
+      "before": "6bbb484972a203a533175b2597c7a5205f5792ca46115a043ac89e471545f3c1",
+      "after": "d64cb49ecf1449f2a7a6748335c034f018ecfaafce8794d49d35ed9480913652"
+    },
+    "src/app/session/hooks/use-session-actions/index.ts": {
+      "before": "df52951c1e79d70645d04c284a12f612bc2cd75930e2946dc2c5b8f6b56fbbf7",
+      "after": "c831bbba8a80ecca5a927886b5123ed99b001e1c737844d4ce6c55e5d6ba96ba"
+    },
+    "src/components/assistant-ui/tool/delegate-no-popup.test.tsx": {
+      "before": null,
+      "after": "fbeab4e99e27991d1e9379cf778b6561192f2ee84a108f4ee7ed5071c8253919"
+    },
+    "src/components/assistant-ui/tool/delegate.tsx": {
+      "before": "3ca6631933fb84fa8bf83bb2121f67da04e4e06a34929617f863379a3c1903a8",
+      "after": "a39ae835d8c2c135958f524fd7b5b581b8307751231fa5400e5ab6ce7fd02735"
+    },
+    "src/lib/no-subagent-popup-model.ts": {
+      "before": null,
+      "after": "a93feaf94964499a1c7681b7fe87dd950fc4f32984ed8c1769ad6be5325d2c63"
+    },
+    "src/lib/no-subagent-popup.ts": {
+      "before": null,
+      "after": "4f8dc541191e532cdd2909ba62aa9561f0c0d679347919d3835ffe30a0eb4897"
+    },
+    "src/lib/open-subagent-in-current-window.test.ts": {
+      "before": null,
+      "after": "412e582d5d20ee4943e8589df2aa65c9e3c8b69800d407756859e37f83351c85"
+    },
+    "src/lib/open-subagent-in-current-window.ts": {
+      "before": null,
+      "after": "88d50ef87101ca3f46eeed5425c8df6ab1c044ea6b80ef2787c5a3bfea4e9c85"
+    },
+    "src/store/subagent-watch.ts": {
+      "before": null,
+      "after": "d7546257e7240befe026537f4f15a6873626c7e528abf76c5a14dd1c4252f67f"
+    },
+    "src/store/windows.ts": {
+      "before": "4db54b2b40f1bd4eb5a234d06f96176cbd0c223d03acf0803866554792007f75",
+      "after": "77653633b32cbb1bde330d84805aef6ba8ac39e56bc268324be833786230e40d"
+    },
+    "src/components/assistant-ui/tool/delegate-model.ts": {
+      "before": "132f057d166a476b63715a7134229b98825dfda9e60b25956063c399bf0bcc2e",
+      "after": "326c4c6625d8498113515e5b383601ad4caf9d260a319c579954b616893b9139"
+    },
+    "src/lib/no-subagent-popup-history-runtime.ts": {
+      "before": null,
+      "after": "c688981f36f892d065285ac1eaa7e63c7a94474924c80bf7327fd773f860e8a5"
+    },
+    "src/lib/no-subagent-popup-history.test.ts": {
+      "before": null,
+      "after": "330450777a586721a3e685ee0d6cd79af49662c85289361f829c0f98fdbb7729"
+    },
+    "src/lib/no-subagent-popup-history.ts": {
+      "before": null,
+      "after": "ba3a0ad93f43b222265e81d5a44715643a00a24daebb6a05ab7116542fd0ec5a"
+    }
+  }
+}

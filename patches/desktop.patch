@@ -1,0 +1,824 @@
+--- /dev/null
++++ b/apps/desktop/src/app/chat/sidebar/running-subagent-rows.test.tsx
+@@ -0,0 +1,80 @@
++import { act, fireEvent, render, screen, cleanup } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++
++import { $activeSessionId, $selectedStoredSessionId, $sessions } from '@/store/session'
++import { $sessionStates, $sessionTiles, recordSessionEventScope } from '@/store/session-states'
++import { $subagentsBySession, type SubagentProgress } from '@/store/subagents'
++import type { SessionInfo } from '@/types/hermes'
++
++import { RunningSubagentRows } from './running-subagent-rows'
++
++const { navigate, snapshot } = vi.hoisted(() => ({ navigate: vi.fn(), snapshot: vi.fn() }))
++vi.mock('@/lib/open-subagent-in-current-window', () => ({ openSubagentInCurrentWindow: navigate }))
++vi.mock('@/app/chat/composer/status-stack/use-subagent-snapshot', () => ({ useSubagentSnapshot: snapshot }))
++const session = { id: 'parent', _lineage_root_id: 'root', title: 'Parent', source: 'local' } as SessionInfo
++function child(id: string, status: SubagentProgress['status'] = 'running', parentId: string | null = null): SubagentProgress {
++  return { id, sessionId: `child-${id}`, parentId, goal: `Goal ${id}`, status, startedAt: 1, updatedAt: 1,
++    taskCount: 1, taskIndex: 0, filesRead: [], filesWritten: [], stream: [] }
++}
++beforeEach(() => {
++  vi.clearAllMocks()
++  $sessions.set([session]); $activeSessionId.set('runtime'); $selectedStoredSessionId.set('root')
++  $sessionStates.set({}); $sessionTiles.set([]); $subagentsBySession.set({runtime:[child('a')], unrelated:[child('other')]})
++})
++afterEach(cleanup)
++describe('nested running subagents', () => {
++  it('renders only this parent and navigates its own child without bubbling parent resume', () => {
++    const parentClick = vi.fn()
++    render(<div onClick={parentClick}><RunningSubagentRows session={session} /></div>)
++    expect(screen.queryByText('Goal other')).toBeNull()
++    fireEvent.click(screen.getByRole('button', {name:'Watch subagent: Goal a'}))
++    expect(navigate).toHaveBeenCalledExactlyOnceWith('child-a','runtime')
++    expect(parentClick).not.toHaveBeenCalled()
++    expect(snapshot).toHaveBeenCalledWith('runtime',true)
++  })
++  it('collapses and expands under parent without losing live child data', () => {
++    render(<RunningSubagentRows session={session} />)
++    const toggle=screen.getByRole('button',{name:'Running subagents'})
++    expect(toggle.getAttribute('aria-expanded')).toBe('true');fireEvent.click(toggle)
++    expect(screen.queryByText('Goal a')).toBeNull();expect(toggle.getAttribute('aria-expanded')).toBe('false')
++    fireEvent.click(toggle);expect(screen.getByText('Goal a')).toBeTruthy()
++  })
++  it.each(['completed','failed','interrupted'] as const)('automatically removes %s children and empty dropdown', status => {
++    render(<RunningSubagentRows session={session} />)
++    act(()=>$subagentsBySession.set({runtime:[child('a',status)]}))
++    expect(screen.queryByRole('button',{name:'Running subagents'})).toBeNull()
++    expect(screen.queryByText('Goal a')).toBeNull()
++  })
++  it('nests grandchildren and leaves remaining running children visible', () => {
++    $subagentsBySession.set({runtime:[child('a'),child('b','running','a'),child('done','completed')]})
++    const {container}=render(<RunningSubagentRows session={session} />)
++    expect(container.querySelectorAll('[data-slot="sidebar-running-subagent"]')).toHaveLength(2)
++    expect(screen.queryByText('Goal done')).toBeNull()
++    expect(screen.getByText('Goal b').closest('button')?.parentElement?.style.marginLeft).toBe('10px')
++  })
++  it('child without a known session remains visible but cannot open a popup', () => {
++    $subagentsBySession.set({runtime:[{...child('a'),sessionId:undefined}]})
++    render(<RunningSubagentRows session={session} />)
++    expect((screen.getByRole('button',{name:'Watch subagent: Goal a'}) as HTMLButtonElement).disabled).toBe(true)
++  })
++  it('isolates cloned parent IDs by connection and profile and preserves that owner on navigation', () => {
++    const scoped={...session,connection_id:'home',profile:'default'}
++    recordSessionEventScope({session_id:'owner-home',connectionId:'home',profile:'default'})
++    recordSessionEventScope({session_id:'owner-work',connectionId:'work',profile:'default'})
++    recordSessionEventScope({session_id:'owner-other-profile',connectionId:'home',profile:'work'})
++    $sessionStates.set(Object.fromEntries(['owner-home','owner-work','owner-other-profile'].map(id=>[id,{storedSessionId:'root'} as never])))
++    $subagentsBySession.set({'owner-home':[child('owned')],'owner-work':[child('foreign')],'owner-other-profile':[child('different-profile')]})
++    render(<RunningSubagentRows session={scoped} />)
++    expect(screen.getByText('Goal owned')).toBeTruthy()
++    expect(screen.queryByText('Goal foreign')).toBeNull()
++    expect(screen.queryByText('Goal different-profile')).toBeNull()
++    fireEvent.click(screen.getByRole('button',{name:'Watch subagent: Goal owned'}))
++    expect(navigate).toHaveBeenCalledExactlyOnceWith('child-owned','owner-home',{connectionId:'home',profile:'default',targetProfile:'default'})
++  })
++  it('does not expose unknown-owner runtime children under an explicitly owned parent', () => {
++    render(<RunningSubagentRows session={{...session,connection_id:'home',profile:'default'}} />)
++    expect(screen.queryByText('Goal a')).toBeNull()
++    expect(screen.queryByRole('button',{name:'Running subagents'})).toBeNull()
++  })
++
++})
+--- /dev/null
++++ b/apps/desktop/src/app/chat/sidebar/running-subagent-rows.tsx
+@@ -0,0 +1,71 @@
++import { useStore } from '@nanostores/react'
++import { useState } from 'react'
++
++import { useSubagentSnapshot } from '@/app/chat/composer/status-stack/use-subagent-snapshot'
++import { liveChildren, parentOwnerMatches, parentRuntimeIds } from '@/lib/no-subagent-popup-model'
++import { openSubagentInCurrentWindow } from '@/lib/open-subagent-in-current-window'
++import { $activeSessionId, $selectedStoredSessionId, $sessions, lineageAliases, sessionOwnerRouteFromRow } from '@/store/session'
++import { $sessionStates, $sessionTiles, runtimeSessionOwner } from '@/store/session-states'
++import { $subagentsBySession, buildSubagentTree, type SubagentNode } from '@/store/subagents'
++import type { SessionInfo } from '@/types/hermes'
++
++export function RunningSubagentRows({ session }: { session: SessionInfo }) {
++  const all = useStore($subagentsBySession)
++  const states = useStore($sessionStates)
++  const tiles = useStore($sessionTiles)
++  const activeId = useStore($activeSessionId)
++  const selectedId = useStore($selectedStoredSessionId)
++  const sessions = useStore($sessions)
++  const [expanded, setExpanded] = useState(true)
++  const aliases = lineageAliases(session._lineage_root_id || session.id, [...sessions, session])
++  const ownerRoute = sessionOwnerRouteFromRow(session)
++  const expectedOwner = { connectionId: session.connection_id, profile: session.profile }
++  const runtimeIds = parentRuntimeIds(aliases, states, tiles, activeId, selectedId, id => {
++    const tile = tiles.find(item => item.runtimeId === id)
++    return parentOwnerMatches(expectedOwner, runtimeSessionOwner(id) ?? tile?.ownerRoute ?? tile?.ownerProfile)
++  })
++  const children = liveChildren(runtimeIds.map(id => all[id] ?? []))
++  const runtimeId = runtimeIds.find(id => Boolean(states[id])) ??
++    tiles.find(tile => tile.runtimeId && runtimeIds.includes(tile.runtimeId))?.runtimeId ??
++    (activeId && runtimeIds.includes(activeId) ? activeId : null)
++  useSubagentSnapshot(runtimeId, children.length > 0)
++  if (!children.length) return null
++
++  const renderChildren = (nodes: SubagentNode[], depth = 0): React.ReactNode => nodes.map(({ children: nested, ...item }) => (
++    <div key={item.id} style={{ marginLeft: depth ? 10 : 0 }}>
++      <button
++        type="button"
++        data-slot="sidebar-running-subagent"
++        data-subagent-id={item.id}
++        className="flex w-full min-w-0 items-center gap-1 rounded px-1 py-1 text-left text-xs text-(--ui-text-secondary) hover:bg-(--ui-interactive-hover) focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
++        disabled={!item.sessionId}
++        title={item.goal}
++        aria-label={`Watch subagent: ${item.goal}`}
++        onClick={event => {
++          event.stopPropagation()
++          if (item.sessionId) {
++            if (ownerRoute) openSubagentInCurrentWindow(item.sessionId, runtimeId, ownerRoute)
++            else openSubagentInCurrentWindow(item.sessionId, runtimeId)
++          }
++        }}
++      >
++        <span aria-hidden="true" className="shrink-0 text-(--ui-text-tertiary)">◌</span>
++        <span className="min-w-0 flex-1 truncate">{item.goal || 'Subagent'}</span>
++        <span className="shrink-0 text-[0.625rem] text-(--ui-text-tertiary)">{item.status}</span>
++      </button>
++      {renderChildren(nested, depth + 1)}
++    </div>
++  ))
++
++  return (
++    <div data-slot="sidebar-live-subagents" className="mb-1 ml-5 min-w-0 border-l border-(--ui-stroke-tertiary) pl-2"
++      onPointerDown={event => event.stopPropagation()} onContextMenu={event => event.stopPropagation()}>
++      <button type="button" className="w-full py-1 text-left text-[0.625rem] text-(--ui-text-tertiary)"
++        aria-expanded={expanded} aria-label="Running subagents"
++        onClick={event => { event.stopPropagation(); setExpanded(value => !value) }}>
++        {expanded ? '▾' : '▸'} {children.length} running {children.length === 1 ? 'subagent' : 'subagents'}
++      </button>
++      {expanded && renderChildren(buildSubagentTree(children))}
++    </div>
++  )
++}
+--- a/apps/desktop/src/app/chat/sidebar/session-row.tsx
++++ b/apps/desktop/src/app/chat/sidebar/session-row.tsx
+@@ -25,6 +25,7 @@
+ import { coarseElapsed } from '@/lib/time'
+ import { useStoreSelector } from '@/lib/use-session-slice'
+ import { cn } from '@/lib/utils'
++import { useNoSubagentPopup } from '@/lib/no-subagent-popup'
+ import { $sidebarRowMeta } from '@/store/layout'
+ import { normalizeProfileKey } from '@/store/profile'
+ import { $projects } from '@/store/projects'
+@@ -49,6 +50,7 @@
+   SidebarRowShell
+ } from './chrome'
+ import { shellOwnsPress } from './reorderable-list'
++import { RunningSubagentRows } from './running-subagent-rows'
+ import { SessionActionsMenu, SessionContextMenu } from './session-actions-menu'
+ import { sessionRowDetails } from './session-row-details'
+ import { resolveSessionRowClick } from './session-row-gesture'
+@@ -680,4 +682,15 @@
+   )
+ }
+ 
+-export const SidebarSessionRow = memo(SidebarSessionRowImpl, rowPropsEqual)
++function SidebarSessionRowWithSubagents({ ref, style, ...props }: SidebarSessionRowProps) {
++  const enabled = useNoSubagentPopup()
++  if (!enabled) return <SidebarSessionRowImpl {...props} ref={ref} style={style} />
++  return (
++    <div ref={ref} style={style} data-slot="sidebar-session-with-subagents" data-no-popup-version="no-subagent-popup@0.1.2">
++      <SidebarSessionRowImpl {...props} />
++      <RunningSubagentRows session={props.session} />
++    </div>
++  )
++}
++
++export const SidebarSessionRow = memo(SidebarSessionRowWithSubagents, rowPropsEqual)
+--- a/apps/desktop/src/app/session/hooks/use-session-actions/index.ts
++++ b/apps/desktop/src/app/session/hooks/use-session-actions/index.ts
+@@ -1371,7 +1371,7 @@
+           // activate reattaches the live transport, so a turn finishing
+           // between snapshot and reattach cannot leave a stale partial on
+           // screen.
+-          const shouldRefreshPersistedTranscript = !isWatchWindow()
++          const shouldRefreshPersistedTranscript = !isWatchWindow(storedSessionId)
+ 
+           const suppressUnprovenWarmTranscript =
+             !resumedSameSelectedSession && shouldRefreshPersistedTranscript && !hasValidProvenance
+@@ -1910,7 +1910,7 @@
+       let recoveredInFlightTail = false
+ 
+       try {
+-        const watchWindow = isWatchWindow()
++        const watchWindow = isWatchWindow(storedSessionId)
+ 
+         let localSnapshot = resumedSameSelectedSession
+           ? preserveLocalPendingTurnMessages(viewMessagesForReconcile(), resumeStartMessages)
+--- /dev/null
++++ b/apps/desktop/src/components/assistant-ui/tool/delegate-no-popup.test.tsx
+@@ -0,0 +1,98 @@
++import { act, fireEvent, render, screen, cleanup } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++
++import { registry } from '@/contrib/registry'
++import { $subagentsBySession, type SubagentProgress } from '@/store/subagents'
++
++import { DelegateTool } from './delegate'
++import { runtimeSessionOwner } from '@/store/session-states'
++import { startChildLinkHistory } from '@/lib/no-subagent-popup-history-runtime'
++
++const { inline, popup } = vi.hoisted(() => ({inline: vi.fn(), popup: vi.fn()}))
++vi.mock('@/lib/open-subagent-in-current-window',()=>({openSubagentInCurrentWindow:inline}))
++vi.mock('@/store/windows',()=>({openSessionInNewWindow:popup}))
++vi.mock('@/app/chat/session-view',async()=>{
++  const {atom}=await import('nanostores')
++  const view={$storedId:atom('parent'),$runtimeId:atom('runtime')}
++  return {useSessionView:()=>view}
++})
++vi.mock('@/store/session-states',async()=>{
++  const {atom}=await import('nanostores')
++  return {$sessionStates:atom({runtime:{storedSessionId:'parent'}}),$sessionTiles:atom([]),runtimeSessionOwner:vi.fn(()=>({connectionId:'server-a',profile:'default'}))}
++})
++vi.mock('@/store/session',async()=>{
++  const {atom}=await import('nanostores')
++  return {$sessions:atom([])}
++})
++let dispose: (()=>void) | undefined
++beforeEach(()=>{
++  vi.clearAllMocks()
++  window.localStorage.clear()
++  vi.mocked(runtimeSessionOwner).mockReturnValue({connectionId:'server-a',profile:'default'})
++  $subagentsBySession.set({runtime:[{id:'sa',parentId:null,goal:'Investigate source',sessionId:'child-session',status:'completed',
++    startedAt:1,updatedAt:2,taskCount:1,taskIndex:0,filesRead:[],filesWritten:[],stream:[]} as SubagentProgress]})
++})
++afterEach(()=>{cleanup();dispose?.();dispose=undefined})
++describe('actual transcript delegate card navigation',()=>{
++  const dispatch={status:'dispatched',subagent_ids:['sa'],goals:['Investigate source']}
++  it('completed card stays clickable after the live row is retired',()=>{
++    dispose=registry.register({id:'no-popup-test',area:'session.noSubagentPopup',data:{enabled:true}})
++    render(<DelegateTool args={{tasks:[{goal:'Investigate source'}]}} result={dispatch} toolCallId="call" />)
++    act(()=>$subagentsBySession.set({runtime:[]}))
++    fireEvent.click(screen.getByRole('button',{name:'Investigate source'}))
++    expect(inline).toHaveBeenCalledExactlyOnceWith('child-session','parent')
++    expect(popup).not.toHaveBeenCalled()
++  })
++  it('historical card restores its exact link after unmount/reopen with no live state',()=>{
++    dispose=registry.register({id:'no-popup-test',area:'session.noSubagentPopup',data:{enabled:true}})
++    const first=render(<DelegateTool args={{tasks:[{goal:'Investigate source'}]}} result={dispatch} toolCallId="call" />)
++    first.unmount()
++    $subagentsBySession.set({runtime:[]})
++    render(<DelegateTool args={{tasks:[{goal:'Investigate source'}]}} result={dispatch} toolCallId="call" />)
++    fireEvent.click(screen.getByRole('button',{name:'Investigate source'}))
++    expect(inline).toHaveBeenCalledExactlyOnceWith('child-session','parent')
++  })
++  it('off-screen child completion is captured without any delegation card mounted',()=>{
++    const stop=startChildLinkHistory()
++    $subagentsBySession.set({runtime:[]})
++    stop()
++    dispose=registry.register({id:'no-popup-test',area:'session.noSubagentPopup',data:{enabled:true}})
++    render(<DelegateTool args={{tasks:[{goal:'Investigate source'}]}} result={dispatch} toolCallId="call" />)
++    fireEvent.click(screen.getByRole('button',{name:'Investigate source'}))
++    expect(inline).toHaveBeenCalledExactlyOnceWith('child-session','parent')
++  })
++  it('does not reuse saved links on a different connection',()=>{
++    const stop=startChildLinkHistory();stop()
++    $subagentsBySession.set({runtime:[]})
++    vi.mocked(runtimeSessionOwner).mockReturnValue({connectionId:'server-b',profile:'default'})
++    dispose=registry.register({id:'no-popup-test',area:'session.noSubagentPopup',data:{enabled:true}})
++    render(<DelegateTool args={{tasks:[{goal:'Investigate source'}]}} result={dispatch} toolCallId="call" />)
++    expect(screen.getByRole('button',{name:'Investigate source'})).toHaveProperty('disabled',true)
++    expect(inline).not.toHaveBeenCalled()
++  })
++  it('uses a durable result session id even without live state or an archive',()=>{
++    $subagentsBySession.set({runtime:[]})
++    dispose=registry.register({id:'no-popup-test',area:'session.noSubagentPopup',data:{enabled:true}})
++    render(<DelegateTool args={{tasks:[{goal:'Investigate source'}]}} result={{results:[{status:'completed',session_id:'saved-child'}]}} toolCallId="call" />)
++    fireEvent.click(screen.getByRole('button',{name:'Investigate source'}))
++    expect(inline).toHaveBeenCalledExactlyOnceWith('saved-child','parent')
++  })
++  it('does not guess an old missing child link from another live child with the same goal',()=>{
++    $subagentsBySession.set({runtime:[{id:'other',parentId:null,goal:'Investigate source',sessionId:'wrong-child',status:'running',startedAt:1,updatedAt:2,taskCount:1,taskIndex:0,filesRead:[],filesWritten:[],stream:[]} as SubagentProgress]})
++    dispose=registry.register({id:'no-popup-test',area:'session.noSubagentPopup',data:{enabled:true}})
++    render(<DelegateTool args={{tasks:[{goal:'Investigate source'}]}} result={dispatch} toolCallId="call" />)
++    expect(screen.getByRole('button',{name:'Investigate source'})).toHaveProperty('disabled',true)
++    expect(inline).not.toHaveBeenCalled()
++  })
++  it('clicking with companion plugin opens inline, never calls popup preload path',()=>{
++    dispose=registry.register({id:'no-popup-test',area:'session.noSubagentPopup',data:{enabled:true}})
++    render(<DelegateTool args={{tasks:[{goal:'Investigate source'}]}} result={{results:[{status:'ok'}]}} toolCallId="call" />)
++    fireEvent.click(screen.getByRole('button',{name:'Investigate source'}))
++    expect(inline).toHaveBeenCalledExactlyOnceWith('child-session','parent');expect(popup).not.toHaveBeenCalled()
++  })
++  it('disabled plugin preserves original popup behavior',()=>{
++    render(<DelegateTool args={{tasks:[{goal:'Investigate source'}]}} result={{results:[{status:'ok'}]}} toolCallId="call" />)
++    fireEvent.click(screen.getByRole('button',{name:'Investigate source'}))
++    expect(popup).toHaveBeenCalledExactlyOnceWith('child-session',{watch:true,parentSessionId:'parent'});expect(inline).not.toHaveBeenCalled()
++  })
++})
+--- a/apps/desktop/src/components/assistant-ui/tool/delegate.tsx
++++ b/apps/desktop/src/components/assistant-ui/tool/delegate.tsx
+@@ -1,7 +1,7 @@
+ 'use client'
+ 
+ import { useStore } from '@nanostores/react'
+-import { type FC, type ReactNode, useMemo } from 'react'
++import { type FC, type ReactNode } from 'react'
+ 
+ import { useSessionView } from '@/app/chat/session-view'
+ import { useElapsedSeconds } from '@/components/chat/activity-timer'
+@@ -15,6 +15,11 @@
+ import { displayModelName } from '@/lib/model-status-label'
+ import { useSessionSlice } from '@/lib/use-session-slice'
+ import { cn } from '@/lib/utils'
++import { useNoSubagentPopup } from '@/lib/no-subagent-popup'
++import { openSubagentInCurrentWindow } from '@/lib/open-subagent-in-current-window'
++import { restoreDelegateLinks } from '@/lib/no-subagent-popup-history'
++import { childHistoryScope } from '@/lib/no-subagent-popup-history-runtime'
++import { $sessionStates, runtimeSessionOwner } from '@/store/session-states'
+ import { $subagentsBySession } from '@/store/subagents'
+ import { openSessionInNewWindow } from '@/store/windows'
+ 
+@@ -85,7 +90,11 @@
+   ].filter(Boolean)
+ 
+   // Only a child that reported its own session id has somewhere to go.
+-  const open = sessionId ? () => void openSessionInNewWindow(sessionId, { watch: true, parentSessionId }) : undefined
++  const inlineNavigation = useNoSubagentPopup()
++  const open = sessionId ? () => {
++    if (inlineNavigation) openSubagentInCurrentWindow(sessionId, parentSessionId)
++    else void openSessionInNewWindow(sessionId, { watch: true, parentSessionId })
++  } : undefined
+ 
+   // The scaffold mark goes on the goal row, NEVER on this wrapper: it fades to
+   // 0.67, and opacity opens a stacking context around the ticker's transformed
+@@ -102,6 +111,7 @@
+             'min-w-0 truncate text-left transition-colors',
+             open ? 'hover:text-foreground focus-visible:text-foreground focus-visible:outline-none' : 'cursor-default'
+           )}
++          title={!open ? 'No saved child-session link is available for this card.' : undefined}
+           disabled={!open}
+           onClick={open}
+           type="button"
+@@ -144,13 +154,23 @@
+  * them nothing.
+  */
+ export const DelegateTool: FC<Pick<ToolPart, 'args' | 'result' | 'toolCallId'>> = ({ args, result, toolCallId }) => {
+-  const sessionId = useStore(useSessionView().$runtimeId)
++  const view = useSessionView()
++  const sessionId = useStore(view.$runtimeId)
++  const parentId = useStore(view.$storedId)
++  useStore($sessionStates)
++  const inlineNavigation = useNoSubagentPopup()
+   const live = useSessionSlice($subagentsBySession, sessionId)
+ 
+-  const rows = useMemo(
+-    () => mergeDelegateRows(delegateRowsFromCall(args, result, toolCallId), live, toolCallId),
+-    [args, live, result, toolCallId]
+-  )
++  const rows = (() => {
++      const dispatched = delegateRowsFromCall(args, result, toolCallId)
++      let restored = dispatched
++      if (inlineNavigation) {
++        try {
++          restored = restoreDelegateLinks(dispatched, childHistoryScope(runtimeSessionOwner(sessionId), parentId), window.localStorage)
++        } catch { /* Storage denial must not break cards. */ }
++      }
++      return mergeDelegateRows(restored, live, toolCallId)
++    })()
+ 
+   if (rows.length === 0) {
+     return null
+--- /dev/null
++++ b/apps/desktop/src/lib/no-subagent-popup-model.ts
+@@ -0,0 +1,58 @@
++export interface RunningChild {
++  id: string
++  sessionId?: string | null
++  goal: string
++  status: string
++  updatedAt: number
++}
++
++/** Only actual live work belongs in the sidebar, never terminal/detached summaries. */
++export function liveChildren<T extends RunningChild>(groups: readonly (readonly T[])[]): T[] {
++  const latest = new Map<string, T>()
++  for (const group of groups) {
++    for (const child of group) {
++      const key = child.sessionId || child.id
++      const previous = latest.get(key)
++      const terminal = child.status !== 'running' && child.status !== 'queued'
++      if (!previous || child.updatedAt > previous.updatedAt ||
++        (child.updatedAt === previous.updatedAt && terminal)) latest.set(key, child)
++    }
++  }
++  return [...latest.values()].filter(child => child.status === 'running' || child.status === 'queued')
++}
++
++/** Owner identity must be checked as well as stored ids: profiles/connections
++ * can contain cloned sessions with identical lineage ids. Unknown exact owners
++ * fail closed, while legacy untagged default-profile sessions remain supported. */
++export interface ParentOwner {
++  connectionId?: string | null
++  profile?: string | null
++}
++
++export function parentOwnerMatches(expected: ParentOwner, actual?: ParentOwner | string | null): boolean {
++  const profile = (value?: string | null) => value?.trim() || 'default'
++  const candidate = typeof actual === 'string' ? { profile: actual } : actual
++  const expectedConnection = expected.connectionId?.trim() || ''
++  const actualConnection = candidate?.connectionId?.trim() || ''
++  return expectedConnection === actualConnection && profile(expected.profile) === profile(candidate?.profile)
++}
++
++/** Map durable parent ids to live transport ids without assuming they are equal. */
++export function parentRuntimeIds(
++  aliases: readonly string[],
++  states: Record<string, { storedSessionId?: string | null }>,
++  tiles: readonly { storedSessionId: string; runtimeId?: string | null }[],
++  activeId: string | null,
++  selectedId: string | null,
++  acceptRuntime: (runtimeId: string) => boolean = () => true
++): string[] {
++  const ids = new Set(aliases)
++  for (const [runtimeId, state] of Object.entries(states)) {
++    if (state.storedSessionId && ids.has(state.storedSessionId)) ids.add(runtimeId)
++  }
++  for (const tile of tiles) {
++    if (aliases.includes(tile.storedSessionId) && tile.runtimeId) ids.add(tile.runtimeId)
++  }
++  if (selectedId && aliases.includes(selectedId) && activeId) ids.add(activeId)
++  return [...ids].filter(acceptRuntime)
++}
+--- /dev/null
++++ b/apps/desktop/src/lib/no-subagent-popup.ts
+@@ -0,0 +1,14 @@
++import { useEffect, useSyncExternalStore } from 'react'
++
++import { registry } from '@/contrib/registry'
++import { startChildLinkHistory } from './no-subagent-popup-history-runtime'
++
++/** Explicit companion-plugin seam added by this patch, NOT an upstream SDK API. */
++export const NO_SUBAGENT_POPUP_AREA = 'session.noSubagentPopup'
++const subscribe = (listener: () => void) => registry.subscribeArea(NO_SUBAGENT_POPUP_AREA, listener)
++export const noSubagentPopupEnabled = () => registry.getArea(NO_SUBAGENT_POPUP_AREA).some(c => (c.data as { enabled?: boolean } | undefined)?.enabled === true)
++export const useNoSubagentPopup = () => {
++  const enabled = useSyncExternalStore(subscribe, noSubagentPopupEnabled, () => false)
++  useEffect(() => enabled ? startChildLinkHistory() : undefined, [enabled])
++  return enabled
++}
+--- /dev/null
++++ b/apps/desktop/src/lib/open-subagent-in-current-window.test.ts
+@@ -0,0 +1,36 @@
++import { beforeEach, describe, expect, it, vi } from 'vitest'
++import { isInlineSubagentWatch } from '@/store/subagent-watch'
++import { openSubagentInCurrentWindow } from './open-subagent-in-current-window'
++
++const { open, owner, hint } = vi.hoisted(()=>({open:vi.fn(),owner:vi.fn(),hint:vi.fn()}))
++vi.mock('@/app/open-session',()=>({openSession:open}))
++vi.mock('@/store/session',()=>({setSessionOwnerHint:hint}))
++vi.mock('@/store/session-states',()=>({knownOwnerForSession:owner}))
++vi.mock('@/store/session-request-router',()=>({isSessionOwnerRoute:(v:unknown)=>Boolean(v && typeof v==='object' && 'connectionId' in v)}))
++beforeEach(()=>{vi.clearAllMocks();window.sessionStorage.clear()})
++describe('same-window spectator open',()=>{
++ it('uses existing pane, remembers owner, marks watch before invoking navigation',()=>{
++  const route={connectionId:'gateway',profile:'default'};owner.mockImplementation((id:string)=>id==='parent'?route:undefined)
++  open.mockImplementation((id:string,navigate:(to:string)=>void)=>{expect(isInlineSubagentWatch(id)).toBe(true);navigate('/'+id)})
++  openSubagentInCurrentWindow('child-nav','parent')
++  expect(hint).toHaveBeenCalledExactlyOnceWith('child-nav',route)
++  expect(open).toHaveBeenCalledWith('child-nav',expect.any(Function),'in-place',{ownerRoute:route,workspaceMode:'sessions'})
++  expect(window.location.hash).toBe('#/child-nav');expect(isInlineSubagentWatch('parent')).toBe(false)
++ })
++ it('prefers known child owner rather than overwriting with parent route',()=>{
++  const route={connectionId:'child-host',profile:'media'};owner.mockReturnValue(route)
++  openSubagentInCurrentWindow('child-owner','parent');expect(hint).toHaveBeenCalledWith('child-owner',route)
++ })
++ it('never invents an owner when no owner is known',()=>{
++  owner.mockReturnValue(undefined);openSubagentInCurrentWindow('child-no-owner')
++  expect(hint).not.toHaveBeenCalled();expect(open).toHaveBeenCalledWith('child-no-owner',expect.any(Function),'in-place',{ownerRoute:undefined,workspaceMode:'sessions'})
++ })
++ it('honors the clicked parent row owner instead of an unrelated cloned child hint',()=>{
++  const expected={connectionId:'clicked-parent',profile:'media'}
++  owner.mockReturnValue({connectionId:'other-host',profile:'default'})
++  openSubagentInCurrentWindow('cloned-child','parent',expected)
++  expect(hint).toHaveBeenCalledExactlyOnceWith('cloned-child',expected)
++  expect(open).toHaveBeenCalledWith('cloned-child',expect.any(Function),'in-place',{ownerRoute:expected,workspaceMode:'sessions'})
++ })
++
++})
+--- /dev/null
++++ b/apps/desktop/src/lib/open-subagent-in-current-window.ts
+@@ -0,0 +1,15 @@
++import { openSession } from '@/app/open-session'
++import { setSessionOwnerHint } from '@/store/session'
++import { isSessionOwnerRoute, type SessionOwnerRoute } from '@/store/session-request-router'
++import { knownOwnerForSession } from '@/store/session-states'
++import { rememberInlineSubagentWatch } from '@/store/subagent-watch'
++
++export function openSubagentInCurrentWindow(sessionId: string, parentSessionId?: string | null, parentOwner?: SessionOwnerRoute): void {
++  const owner = parentOwner ?? knownOwnerForSession(sessionId) ?? (parentSessionId ? knownOwnerForSession(parentSessionId) : undefined)
++  const ownerRoute = owner && isSessionOwnerRoute(owner) ? owner : undefined
++  if (ownerRoute) setSessionOwnerHint(sessionId, ownerRoute)
++  rememberInlineSubagentWatch(sessionId)
++  // Desktop uses a HashRouter. This is an ordinary in-window route change,
++  // not a preload call/window.open. in-place retains the current pane/tab.
++  openSession(sessionId, to => { window.location.hash = to }, 'in-place', { ownerRoute, workspaceMode: 'sessions' })
++}
+--- /dev/null
++++ b/apps/desktop/src/store/subagent-watch.ts
+@@ -0,0 +1,25 @@
++/** Main-window subagent tabs must use the gateway's lazy spectator resume,
++ * just like the original watch popup. No child agent is constructed or submitted. */
++const watched = new Set<string>()
++const STORAGE_KEY = 'hermes.no-subagent-popup.watch'
++export function rememberInlineSubagentWatch(sessionId: string): void {
++  watched.add(sessionId)
++  try {
++    const saved = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) || '[]')
++    const ids = new Set<string>(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [])
++    ids.add(sessionId)
++    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...ids].slice(-256)))
++  } catch { /* Sandboxed storage must not break navigation. */ }
++}
++export function isInlineSubagentWatch(sessionId?: string | null): boolean {
++  if (!sessionId && typeof window !== 'undefined') {
++    try { sessionId = decodeURIComponent(window.location.hash.slice(1).split('?')[0].replace(/^\//, '')) }
++    catch { return false }
++  }
++  if (!sessionId) return false
++  if (watched.has(sessionId)) return true
++  try {
++    const saved: unknown = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) || '[]')
++    return Array.isArray(saved) && saved.includes(sessionId)
++  } catch { return false }
++}
+--- a/apps/desktop/src/store/windows.ts
++++ b/apps/desktop/src/store/windows.ts
+@@ -1,4 +1,5 @@
+ import { notifyError } from './notifications'
++import { isInlineSubagentWatch } from './subagent-watch'
+ 
+ // Window flag set by the Electron main process when it opens a standalone
+ // session window (see electron/main.ts buildSessionWindowUrl). It rides in the
+@@ -58,7 +59,8 @@
+ // running subagent). It resumes lazily — the gateway registers history + a
+ // transport for the live mirror without building an agent, so opening it is
+ // cheap even while the backend is busy running the delegation.
+-export function isWatchWindow(): boolean {
++export function isWatchWindow(sessionId?: string): boolean {
++  if (isInlineSubagentWatch(sessionId)) return true
+   if (watchWindowCache !== null) {
+     return watchWindowCache
+   }
+--- a/apps/desktop/src/components/assistant-ui/tool/delegate-model.ts
++++ b/apps/desktop/src/components/assistant-ui/tool/delegate-model.ts
+@@ -18,6 +18,8 @@
+   model?: string
+   /** The child's own session id, when it reported one — opens its window. */
+   sessionId?: string
++  /** Exact runtime child identity from the persisted dispatch, never inferred from a goal. */
++  subagentId?: string
+   status: DelegateRowStatus
+ }
+ 
+@@ -83,6 +85,8 @@
+   const finished = resultRows(result)
+   const dispatched = dispatchedGoals(result)
+   const titles = goals.length > 0 ? goals : dispatched.length > 0 ? dispatched : finished.map(() => 'Delegated task')
++  const dispatch = parseMaybeObject(result)
++  const childIds = Array.isArray(dispatch.subagent_ids) ? dispatch.subagent_ids : []
+   const idle: DelegateRowStatus = result === undefined ? 'running' : 'dispatched'
+ 
+   return titles.map((goal, index) => {
+@@ -95,19 +99,22 @@
+       goal,
+       id: `${toolCallId}:${index}`,
+       model: entry ? field(entry, 'model') || undefined : undefined,
++      sessionId: entry ? (field(entry, 'session_id') || field(entry, 'child_session_id') || field(parseMaybeObject(entry.recovery), 'child_session_id') || undefined) : undefined,
++      subagentId: typeof childIds[index] === 'string' ? childIds[index] : undefined,
+       status: entry ? settledRowStatus(field(entry, 'status')) : idle
+     }
+   })
+ }
+ 
+-function fromSubagent(live: SubagentProgress, fallbackId: string, fallbackGoal: string): DelegateRow {
++function fromSubagent(live: SubagentProgress, fallbackId: string, fallbackGoal: string, fallbackSessionId?: string): DelegateRow {
+   return {
+     activity: live.stream.map(entry => entry.text).filter(Boolean),
+     durationSeconds: live.durationSeconds,
+     goal: live.goal || fallbackGoal,
+     id: live.id || fallbackId,
+     model: live.model,
+-    sessionId: live.sessionId,
++    sessionId: live.sessionId || fallbackSessionId,
++    subagentId: live.id,
+     status: live.status
+   }
+ }
+@@ -144,14 +151,16 @@
+   }
+ 
+   const prefix = toolCallId ? `delegate-tool:${toolCallId}:` : ''
+-  const byId = rows.map((_row, index) => (prefix ? claim(c => c.id === `${prefix}${index}`) : undefined))
+-  const byGoal = rows.map((row, index) => byId[index] ?? claim(c => normalize(c.goal) === normalize(row.goal)))
++  const byId = rows.map((row, index) =>
++    (row.subagentId ? claim(c => c.id === row.subagentId) : undefined) ??
++    (prefix ? claim(c => c.id === `${prefix}${index}`) : undefined))
++  const byGoal = rows.map((row, index) => byId[index] ?? (!row.subagentId ? claim(c => normalize(c.goal) === normalize(row.goal)) : undefined))
+   const sameShape = rows.length === live.length
+ 
+   return rows.map((row, index) => {
+-    const matched = byGoal[index] ?? (sameShape ? claim(c => c.taskIndex === index) : undefined)
++    const matched = byGoal[index] ?? (!row.subagentId && sameShape ? claim(c => c.taskIndex === index) : undefined)
+ 
+-    return matched ? fromSubagent(matched, row.id, row.goal) : row
++    return matched ? fromSubagent(matched, row.id, row.goal, row.sessionId) : row
+   })
+ }
+ 
+--- /dev/null
++++ b/apps/desktop/src/lib/no-subagent-popup-history-runtime.ts
+@@ -0,0 +1,45 @@
++import { parentOwnerMatches } from '@/lib/no-subagent-popup-model'
++import { $sessions } from '@/store/session'
++import { $sessionStates, $sessionTiles, runtimeSessionOwner } from '@/store/session-states'
++import { $subagentsBySession } from '@/store/subagents'
++
++import { delegateHistoryScope, rememberDelegateLinks } from './no-subagent-popup-history'
++
++type Owner = Parameters<typeof delegateHistoryScope>[0]
++let references = 0
++let stop: (() => void) | undefined
++
++export function childHistoryScope(owner: Owner, storedId: string | null): string | null {
++  const row = $sessions.get().find(item => item.id === storedId && parentOwnerMatches(
++    { connectionId: item.connection_id, profile: item.profile }, owner))
++  return delegateHistoryScope(owner, row?._lineage_root_id || storedId, 'children')
++}
++
++/** Observe the underlying store, not virtualized cards: off-screen children must retain their links too. */
++export function startChildLinkHistory(): () => void {
++  references++
++  if (!stop) {
++    const fingerprints = new Map<string, string>()
++    const capture = () => {
++      try {
++        for (const [runtimeId, children] of Object.entries($subagentsBySession.get())) {
++          const parentId = $sessionStates.get()[runtimeId]?.storedSessionId ||
++            $sessionTiles.get().find(tile => tile.runtimeId === runtimeId)?.storedSessionId || null
++          const scope = childHistoryScope(runtimeSessionOwner(runtimeId), parentId)
++          if (!scope) continue
++          const fingerprint = JSON.stringify([scope, children.map(child => [child.id, child.sessionId, child.status])])
++          if (fingerprints.get(runtimeId) === fingerprint) continue
++          const rows = children.map(child => ({
++            id: child.id, subagentId: child.id, sessionId: child.sessionId, status: child.status, activity: [], goal: ''
++          }))
++          rememberDelegateLinks(rows, rows, scope, window.localStorage)
++          fingerprints.set(runtimeId, fingerprint)
++        }
++      } catch { /* Renderer/storage initialization or denial must not affect live agents. */ }
++    }
++    const disposers = [$subagentsBySession.listen(capture), $sessionStates.listen(capture), $sessionTiles.listen(capture), $sessions.listen(capture)]
++    capture()
++    stop = () => { disposers.forEach(dispose => dispose()); stop = undefined }
++  }
++  return () => { references--; if (!references) stop?.() }
++}
+--- /dev/null
++++ b/apps/desktop/src/lib/no-subagent-popup-history.test.ts
+@@ -0,0 +1,65 @@
++import { describe, expect, it } from 'vitest'
++import type { DelegateRow } from '@/components/assistant-ui/tool/delegate-model'
++import { delegateRowsFromCall, mergeDelegateRows } from '@/components/assistant-ui/tool/delegate-model'
++import type { SubagentProgress } from '@/store/subagents'
++import { DELEGATE_HISTORY_KEY, delegateHistoryScope, rememberDelegateLinks, restoreDelegateLinks } from './no-subagent-popup-history'
++
++const owner={connectionId:'a',profile:'default'}
++const scope=delegateHistoryScope(owner,'parent','children')
++const dispatched:DelegateRow[]=[{id:'call:0',subagentId:'sa',goal:'same goal',activity:[],status:'dispatched'}]
++const completed:DelegateRow[]=[{...dispatched[0],sessionId:'stored-child',status:'completed'}]
++const memory=()=>{const values=new Map<string,string>();return {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value)}}}
++
++describe('durable completed-child links',()=>{
++  it('restores a completed exact child after serialization and an empty live store',()=>{
++    const storage=memory();rememberDelegateLinks(dispatched,completed,scope,storage)
++    expect(restoreDelegateLinks(dispatched,scope,storage)[0]).toMatchObject({sessionId:'stored-child',status:'completed'})
++  })
++  it.each([
++    [{connectionId:'b',profile:'default'},'parent'],
++    [{connectionId:'a',profile:'work'},'parent'],
++    [owner,'other-parent']
++  ] as const)('isolates connection/profile/parent scope %#',(route,parent)=>{
++    const storage=memory();rememberDelegateLinks(dispatched,completed,scope,storage)
++    expect(restoreDelegateLinks(dispatched,delegateHistoryScope(route,parent,'children'),storage)[0].sessionId).toBeUndefined()
++  })
++  it('unknown ownership fails closed, instead of collapsing into the default connection',()=>{
++    expect(delegateHistoryScope(undefined,'parent','children')).toBeNull()
++    expect(delegateHistoryScope(owner,null,'children')).toBeNull()
++  })
++  it('never restores or archives a goal/index-only match',()=>{
++    const storage=memory();rememberDelegateLinks(dispatched,[{...completed[0],subagentId:'other'}],scope,storage)
++    expect(restoreDelegateLinks(dispatched,scope,storage)[0].sessionId).toBeUndefined()
++  })
++  it('retains a link but does not restore cached running liveness after reload',()=>{
++    const storage=memory();rememberDelegateLinks(dispatched,[{...completed[0],status:'running'}],scope,storage)
++    expect(restoreDelegateLinks(dispatched,scope,storage)[0]).toMatchObject({sessionId:'stored-child',status:'dispatched'})
++  })
++  it('retains failed and interrupted transcripts too',()=>{
++    for(const status of ['failed','interrupted'] as const){
++      const storage=memory();rememberDelegateLinks(dispatched,[{...completed[0],status}],scope,storage)
++      expect(restoreDelegateLinks(dispatched,scope,storage)[0]).toMatchObject({sessionId:'stored-child',status})
++    }
++  })
++  it('ignores malformed local data and survives quota or storage refusal',()=>{
++    const storage=memory();storage.setItem(DELEGATE_HISTORY_KEY,'{bad')
++    expect(restoreDelegateLinks(dispatched,scope,storage)).toEqual(dispatched)
++    const denied={getItem:()=>{throw Error('denied')},setItem:()=>{throw Error('quota')}}
++    expect(()=>rememberDelegateLinks(dispatched,completed,scope,denied)).not.toThrow()
++    expect(restoreDelegateLinks(dispatched,scope,denied)).toEqual(dispatched)
++  })
++  it('does not persist goals, summaries, activity, model or credential data',()=>{
++    const storage=memory();rememberDelegateLinks(dispatched,[{...completed[0],goal:'PRIVATE GOAL',activity:['PRIVATE TEXT'],model:'private-model'}],scope,storage)
++    const encoded=storage.getItem(DELEGATE_HISTORY_KEY)!
++    expect(encoded).not.toContain('PRIVATE');expect(encoded).not.toContain('private-model')
++  })
++  it('parses durable session IDs and recovery IDs without live progress',()=>{
++    for(const entry of [{session_id:'s'},{child_session_id:'s'},{recovery:{child_session_id:'s'}}]){
++      expect(delegateRowsFromCall({tasks:[{goal:'g'}]},{results:[{status:'completed',...entry}]},'call')[0].sessionId).toBe('s')
++    }
++  })
++  it('a persisted dispatch child ID cannot be hijacked by a same-goal live worker',()=>{
++    const foreign={id:'other',sessionId:'wrong',goal:'same goal',status:'running',taskIndex:0} as SubagentProgress
++    expect(mergeDelegateRows(completed,[foreign],'call')[0].sessionId).toBe('stored-child')
++  })
++})
+--- /dev/null
++++ b/apps/desktop/src/lib/no-subagent-popup-history.ts
+@@ -0,0 +1,72 @@
++import type { DelegateRow } from '@/components/assistant-ui/tool/delegate-model'
++
++export const DELEGATE_HISTORY_KEY = 'hermes.no-subagent-popup.completed-links.v1'
++const MAX_CALLS = 256
++const MAX_ROWS = 64
++interface Link { subagentId: string; sessionId: string; status: DelegateRow['status'] }
++interface SavedCall { scope: string; links: Link[] }
++type StorageLike = Pick<Storage, 'getItem' | 'setItem'>
++const statuses = new Set(['queued', 'running', 'completed', 'failed', 'interrupted', 'dispatched'])
++
++/** Missing ownership is NOT the default connection. Never join by goal or index alone. */
++export function delegateHistoryScope(
++  owner: string | { connectionId: string; profile?: string } | null | undefined,
++  parentId: string | null,
++  toolCallId: string | undefined
++): string | null {
++  if (!owner || !parentId || !toolCallId) return null
++  const route = typeof owner === 'string' ? ['legacy-profile', owner] : ['connection', owner.connectionId, owner.profile || 'default']
++  if (route.some(value => !value)) return null
++  return JSON.stringify([...route, parentId, toolCallId])
++}
++
++function readCalls(storage: StorageLike): SavedCall[] {
++  try {
++    const parsed: unknown = JSON.parse(storage.getItem(DELEGATE_HISTORY_KEY) || '[]')
++    if (!Array.isArray(parsed)) return []
++    return parsed.slice(-MAX_CALLS).flatMap((call: unknown) => {
++      if (!call || typeof call !== 'object' || !('scope' in call) || typeof call.scope !== 'string' || !('links' in call) || !Array.isArray(call.links)) return []
++      const links = call.links.slice(0, MAX_ROWS).filter((link: unknown): link is Link => {
++        if (!link || typeof link !== 'object') return false
++        const value = link as Partial<Link>
++        return typeof value.subagentId === 'string' && !!value.subagentId &&
++          typeof value.sessionId === 'string' && !!value.sessionId && typeof value.status === 'string' && statuses.has(value.status)
++      })
++      return [{ scope: call.scope, links }]
++    })
++  } catch { return [] }
++}
++
++export function restoreDelegateLinks(rows: readonly DelegateRow[], scope: string | null, storage: StorageLike): DelegateRow[] {
++  if (!scope) return [...rows]
++  const saved = readCalls(storage).find(call => call.scope === scope)
++  return rows.map(row => {
++    if (row.sessionId || !row.subagentId) return row
++    const link = saved?.links.find(item => item.subagentId === row.subagentId)
++    if (!link) return row
++    // Cached liveness never starts a spinner after reload. Only a terminal status is durable evidence.
++    const status = ['completed', 'failed', 'interrupted'].includes(link.status) ? link.status : row.status
++    return { ...row, sessionId: link.sessionId, status }
++  })
++}
++
++/** Only links joined by the persisted dispatch child ID may enter the archive. */
++export function rememberDelegateLinks(
++  dispatched: readonly DelegateRow[], resolved: readonly DelegateRow[], scope: string | null, storage: StorageLike
++): void {
++  if (!scope) return
++  const links = dispatched.flatMap(row => {
++    if (!row.subagentId) return []
++    const current = resolved.find(item => item.subagentId === row.subagentId)
++    return current?.sessionId ? [{ subagentId: row.subagentId, sessionId: current.sessionId, status: current.status }] : []
++  }).slice(0, MAX_ROWS)
++  if (!links.length) return
++  try {
++    const calls = readCalls(storage)
++    const previous = calls.find(call => call.scope === scope)?.links || []
++    const combined = [...previous.filter(old => !links.some(link => link.subagentId === old.subagentId)), ...links].slice(-MAX_ROWS)
++    const next = [...calls.filter(call => call.scope !== scope), { scope, links: combined }].slice(-MAX_CALLS)
++    const encoded = JSON.stringify(next)
++    if (storage.getItem(DELEGATE_HISTORY_KEY) !== encoded) storage.setItem(DELEGATE_HISTORY_KEY, encoded)
++  } catch { /* Storage denial/quota must never break transcript rendering. */ }
++}
