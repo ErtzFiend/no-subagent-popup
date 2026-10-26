@@ -83,7 +83,7 @@
 +})
 --- /dev/null
 +++ b/apps/desktop/src/app/chat/sidebar/running-subagent-rows.tsx
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,65 @@
 +import { useStore } from '@nanostores/react'
 +import { useState } from 'react'
 +
@@ -94,6 +94,8 @@
 +import { $sessionStates, $sessionTiles } from '@/store/session-states'
 +import { $subagentsBySession, buildSubagentTree, type SubagentNode } from '@/store/subagents'
 +import type { SessionInfo } from '@/types/hermes'
++import { formatSubagentStatus } from '@/lib/subagent-status'
++import { useSubagentStatusClock } from '@/lib/use-subagent-status-clock'
 +
 +export function RunningSubagentRows({ session }: { session: SessionInfo }) {
 +  const all = useStore($subagentsBySession)
@@ -106,6 +108,7 @@
 +  const ownerRoute = sessionOwnerRouteFromRow(session)
 +  const { children, runtimeId } = selectParentSubagents(session, sessions, states, tiles, activeId, selectedId, all)
 +  useSubagentSnapshot(runtimeId, children.length > 0)
++  const nowSeconds = useSubagentStatusClock(children.length > 0 && expanded)
 +  if (!children.length) return null
 +
 +  const renderChildren = (nodes: SubagentNode[], depth = 0): React.ReactNode => nodes.map(({ children: nested, ...item }) => (
@@ -128,7 +131,7 @@
 +      >
 +        <span aria-hidden="true" className="shrink-0 text-(--ui-text-tertiary)">◌</span>
 +        <span className="min-w-0 flex-1 truncate">{item.goal || 'Subagent'}</span>
-+        <span className="shrink-0 text-[0.625rem] text-(--ui-text-tertiary)">{item.status}</span>
++        <span title={formatSubagentStatus(item, nowSeconds)} className="max-w-[55%] shrink-0 truncate text-[0.625rem] text-(--ui-text-tertiary)">{formatSubagentStatus(item, nowSeconds)}</span>
 +      </button>
 +      {renderChildren(nested, depth + 1)}
 +    </div>
@@ -173,7 +176,7 @@
 +  const enabled = useNoSubagentPopup()
 +  if (!enabled) return <SidebarSessionRowImpl {...props} ref={ref} style={style} />
 +  return (
-+    <div ref={ref} style={style} data-slot="sidebar-session-with-subagents" data-no-popup-version="no-subagent-popup@0.1.3">
++    <div ref={ref} style={style} data-slot="sidebar-session-with-subagents" data-no-popup-version="no-subagent-popup@0.2.0">
 +      <SidebarSessionRowImpl {...props} />
 +      <RunningSubagentRows session={props.session} />
 +    </div>
@@ -313,10 +316,12 @@
  
  import { useSessionView } from '@/app/chat/session-view'
  import { useElapsedSeconds } from '@/components/chat/activity-timer'
-@@ -15,6 +15,11 @@
+@@ -15,6 +15,13 @@
  import { displayModelName } from '@/lib/model-status-label'
  import { useSessionSlice } from '@/lib/use-session-slice'
  import { cn } from '@/lib/utils'
++import { formatSubagentStatus } from '@/lib/subagent-status'
++import { useSubagentStatusClock } from '@/lib/use-subagent-status-clock'
 +import { useNoSubagentPopup } from '@/lib/no-subagent-popup'
 +import { openSubagentInCurrentWindow } from '@/lib/open-subagent-in-current-window'
 +import { restoreDelegateLinks } from '@/lib/no-subagent-popup-history'
@@ -325,7 +330,15 @@
  import { $subagentsBySession } from '@/store/subagents'
  import { openSessionInNewWindow } from '@/store/windows'
  
-@@ -85,7 +90,11 @@
+@@ -71,6 +78,7 @@
+   const { sessionId } = row
+   const live = isDelegateRowLive(row.status)
+   const elapsed = useElapsedSeconds(live, `delegate:${row.id}`)
++  const nowSeconds = useSubagentStatusClock(live)
+   const activity = row.activity.slice(-TICKER_DEPTH)
+ 
+   const statusLabel = live
+@@ -85,7 +93,11 @@
    ].filter(Boolean)
  
    // Only a child that reported its own session id has somewhere to go.
@@ -338,7 +351,7 @@
  
    // The scaffold mark goes on the goal row, NEVER on this wrapper: it fades to
    // 0.67, and opacity opens a stacking context around the ticker's transformed
-@@ -102,6 +111,7 @@
+@@ -102,6 +114,7 @@
              'min-w-0 truncate text-left transition-colors',
              open ? 'hover:text-foreground focus-visible:text-foreground focus-visible:outline-none' : 'cursor-default'
            )}
@@ -346,7 +359,15 @@
            disabled={!open}
            onClick={open}
            type="button"
-@@ -144,13 +154,23 @@
+@@ -112,6 +125,7 @@
+         {live && <ActivityTimerText className={cn(SCAFFOLD_META_CLASS, 'ml-auto')} seconds={elapsed} />}
+         <Codicon className="ml-auto shrink-0 text-(--conversation-scaffold-text)" name="agent" size="0.625rem" />
+       </div>
++      {(live || row.status === 'dispatched') && <div data-slot="subagent-activity-status" className="pl-5 text-xs text-(--ui-text-tertiary)">{formatSubagentStatus(row, nowSeconds)}</div>}
+       {activity.length > 0 && (
+         <div className="min-w-0 max-w-full pl-5">
+           <ToolRunTicker>
+@@ -144,13 +158,23 @@
   * them nothing.
   */
  export const DelegateTool: FC<Pick<ToolPart, 'args' | 'result' | 'toolCallId'>> = ({ args, result, toolCallId }) => {
@@ -586,16 +607,22 @@
    }
 --- a/apps/desktop/src/components/assistant-ui/tool/delegate-model.ts
 +++ b/apps/desktop/src/components/assistant-ui/tool/delegate-model.ts
-@@ -18,6 +18,8 @@
+@@ -18,7 +18,14 @@
    model?: string
    /** The child's own session id, when it reported one — opens its window. */
    sessionId?: string
 +  /** Exact runtime child identity from the persisted dispatch, never inferred from a goal. */
 +  subagentId?: string
    status: DelegateRowStatus
++  activityPhase?: SubagentProgress['activityPhase']
++  activitySince?: number
++  updatedAt?: number
++  waitTimeoutSeconds?: number
++  currentTool?: string
  }
  
-@@ -83,6 +85,8 @@
+ /**
+@@ -83,6 +90,8 @@
    const finished = resultRows(result)
    const dispatched = dispatchedGoals(result)
    const titles = goals.length > 0 ? goals : dispatched.length > 0 ? dispatched : finished.map(() => 'Delegated task')
@@ -604,7 +631,7 @@
    const idle: DelegateRowStatus = result === undefined ? 'running' : 'dispatched'
  
    return titles.map((goal, index) => {
-@@ -95,19 +99,22 @@
+@@ -95,20 +104,28 @@
        goal,
        id: `${toolCallId}:${index}`,
        model: entry ? field(entry, 'model') || undefined : undefined,
@@ -624,12 +651,19 @@
      id: live.id || fallbackId,
      model: live.model,
 -    sessionId: live.sessionId,
+-    status: live.status
 +    sessionId: live.sessionId || fallbackSessionId,
 +    subagentId: live.id,
-     status: live.status
++    status: live.status,
++    activityPhase: live.activityPhase,
++    activitySince: live.activitySince,
++    updatedAt: live.updatedAt,
++    waitTimeoutSeconds: live.waitTimeoutSeconds,
++    currentTool: live.currentTool
    }
  }
-@@ -144,14 +151,16 @@
+ 
+@@ -144,14 +161,16 @@
    }
  
    const prefix = toolCallId ? `delegate-tool:${toolCallId}:` : ''
@@ -1018,3 +1052,131 @@
    )
  
    // Flat recents as list rows: grouped by recency when enabled, plain otherwise.
+--- a/apps/desktop/src/store/subagents.ts
++++ b/apps/desktop/src/store/subagents.ts
+@@ -38,6 +38,12 @@
+   summary?: string
+   /** Active tool while running — cleared on terminal status. */
+   currentTool?: string
++  /** Optional backend activity hint; absent on older backends. */
++  activityPhase?: 'working' | 'waiting_provider' | 'streaming'
++  /** Unix epoch seconds, supplied only when activityPhase is authoritative. */
++  activitySince?: number
++  lastProgressAt?: number
++  waitTimeoutSeconds?: number
+ }
+ 
+ export interface SubagentNode extends SubagentProgress {
+@@ -237,7 +243,11 @@
+     filesWritten: filesWritten.length ? filesWritten : (prev?.filesWritten ?? []),
+     stream,
+     summary: str(payload.summary) || timeoutSummary(payload) || prev?.summary || undefined,
+-    currentTool: TERMINAL.has(status) ? undefined : tool || prev?.currentTool
++    currentTool: TERMINAL.has(status) ? undefined : tool || prev?.currentTool,
++    activityPhase: payload.activity_phase === 'working' || payload.activity_phase === 'waiting_provider' || payload.activity_phase === 'streaming' ? payload.activity_phase : prev?.activityPhase,
++    activitySince: num(payload.activity_since) ?? prev?.activitySince,
++    lastProgressAt: num(payload.last_progress_at) ?? prev?.lastProgressAt,
++    waitTimeoutSeconds: num(payload.wait_timeout_seconds) ?? (payload.activity_phase ? undefined : prev?.waitTimeoutSeconds),
+   }
+ }
+ 
+--- /dev/null
++++ b/apps/desktop/src/lib/subagent-status.test.tsx
+@@ -0,0 +1,41 @@
++import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
++import { act, cleanup, render, screen } from '@testing-library/react'
++import { formatSubagentStatus } from './subagent-status'
++import { useSubagentStatusClock } from './use-subagent-status-clock'
++import { $subagentsBySession, upsertSubagent } from '@/store/subagents'
++
++beforeEach(()=>{vi.useFakeTimers();vi.setSystemTime(1_000_000);$subagentsBySession.set({})})
++afterEach(()=>{cleanup();vi.useRealTimers()})
++const waiting={status:'running',activityPhase:'waiting_provider' as const,activitySince:995,updatedAt:1_000_000,waitTimeoutSeconds:30}
++function Status({active=true}:{active?:boolean}){return <span>{formatSubagentStatus(waiting,useSubagentStatusClock(active))}</span>}
++describe('truthful child status and one shared clock',()=>{
++ it('ticks elapsed provider wait without an incoming store event',()=>{
++  render(<Status/>);expect(screen.getByText('waiting on provider · 5s / 30s')).toBeTruthy()
++  act(()=>vi.advanceTimersByTime(3000));expect(screen.getByText('waiting on provider · 8s / 30s')).toBeTruthy()
++ })
++ it('shares a timer and cleans it up after all live views leave',()=>{
++  const a=render(<Status/>);const b=render(<Status/>);expect(vi.getTimerCount()).toBe(1)
++  a.unmount();expect(vi.getTimerCount()).toBe(1);b.unmount();expect(vi.getTimerCount()).toBe(0)
++ })
++ it('does not start timers for inactive views',()=>{render(<Status active={false}/>);expect(vi.getTimerCount()).toBe(0)})
++ it('labels overdue waits without inventing terminal failure',()=>{
++  expect(formatSubagentStatus(waiting,1030)).toBe('waiting on provider · 35s / 30s · overdue')
++ })
++ it('does not invent a 30s budget for older or other providers',()=>{
++  expect(formatSubagentStatus({...waiting,waitTimeoutSeconds:undefined},1000)).toBe('waiting on provider · 5s')
++  expect(formatSubagentStatus({status:'running',updatedAt:1_000_000},1000)).toBe('working')
++ })
++ it('reports stale updates rather than dead workers',()=>{
++  expect(formatSubagentStatus({status:'running',updatedAt:900_000,currentTool:'ssh_exec'},1000)).toBe('working · ssh_exec · last update 100s ago')
++ })
++ it('terminal and detached states do not claim liveness',()=>{
++  expect(formatSubagentStatus({...waiting,status:'completed'},1030)).toBe('completed')
++  expect(formatSubagentStatus({status:'dispatched'},1030)).toBe('not currently observed')
++ })
++ it('parses telemetry and clears a prior route budget when a new phase has none',()=>{
++  upsertSubagent('parent',{subagent_id:'sa',goal:'work',status:'running',activity_phase:'waiting_provider',activity_since:995,wait_timeout_seconds:30})
++  expect($subagentsBySession.get().parent[0]).toMatchObject({activityPhase:'waiting_provider',activitySince:995,waitTimeoutSeconds:30})
++  upsertSubagent('parent',{subagent_id:'sa',activity_phase:'working',activity_since:1000})
++  expect($subagentsBySession.get().parent[0].waitTimeoutSeconds).toBeUndefined()
++ })
++})
+--- /dev/null
++++ b/apps/desktop/src/lib/use-subagent-status-clock.ts
+@@ -0,0 +1,27 @@
++import { useSyncExternalStore } from 'react'
++
++let now = Math.floor(Date.now() / 1000)
++let timer: ReturnType<typeof setInterval> | undefined
++const listeners = new Set<() => void>()
++const snapshot = () => now
++const serverSnapshot = () => 0
++const idleSubscribe = () => () => {}
++function subscribe(listener: () => void) {
++  listeners.add(listener)
++  if (!timer) {
++    now = Math.floor(Date.now() / 1000)
++    timer = setInterval(() => {
++      const next = Math.floor(Date.now() / 1000)
++      if (next === now) return
++      now = next
++      for (const notify of listeners) notify()
++    }, 1000)
++  }
++  return () => {
++    listeners.delete(listener)
++    if (!listeners.size && timer) { clearInterval(timer); timer = undefined }
++  }
++}
++/** One shared clock for all visible live children; no timers for settled cards. */
++export const useSubagentStatusClock = (active: boolean) =>
++  useSyncExternalStore(active ? subscribe : idleSubscribe, snapshot, serverSnapshot)
+--- /dev/null
++++ b/apps/desktop/src/lib/subagent-status.ts
+@@ -0,0 +1,23 @@
++export interface SubagentStatusInput {
++  status: string
++  activityPhase?: 'working' | 'waiting_provider' | 'streaming'
++  activitySince?: number
++  updatedAt?: number
++  waitTimeoutSeconds?: number
++  currentTool?: string
++}
++
++/** Epoch seconds for provider fields; updatedAt is the store's epoch milliseconds. */
++export function formatSubagentStatus(item: SubagentStatusInput, nowSeconds: number): string {
++  if (['completed', 'failed', 'interrupted', 'queued'].includes(item.status)) return item.status
++  if (item.status === 'dispatched') return 'not currently observed'
++  const age = Math.max(0, Math.floor(nowSeconds - (item.updatedAt ?? nowSeconds * 1000) / 1000))
++  if (item.activityPhase === 'waiting_provider') {
++    const elapsed = Math.max(0, Math.floor(nowSeconds - (item.activitySince ?? (item.updatedAt ?? nowSeconds * 1000) / 1000)))
++    const limit = item.waitTimeoutSeconds
++    const budget = limit != null && Number.isFinite(limit) && limit > 0 ? ` / ${limit}s${elapsed >= limit ? ' · overdue' : ''}` : ''
++    return `waiting on provider · ${elapsed}s${budget}${age >= 45 ? ` · last update ${age}s ago` : ''}`
++  }
++  const label = item.currentTool ? `working · ${item.currentTool}` : item.activityPhase === 'streaming' ? 'streaming' : 'working'
++  return age >= 45 ? `${label} · last update ${age}s ago` : label
++}

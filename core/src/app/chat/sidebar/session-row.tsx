@@ -686,7 +686,7 @@ function SidebarSessionRowWithSubagents({ ref, style, ...props }: SidebarSession
   const enabled = useNoSubagentPopup()
   if (!enabled) return <SidebarSessionRowImpl {...props} ref={ref} style={style} />
   return (
-    <div ref={ref} style={style} data-slot="sidebar-session-with-subagents" data-no-popup-version="no-subagent-popup@0.1.3">
+    <div ref={ref} style={style} data-slot="sidebar-session-with-subagents" data-no-popup-version="no-subagent-popup@0.2.0">
       <SidebarSessionRowImpl {...props} />
       <RunningSubagentRows session={props.session} />
     </div>

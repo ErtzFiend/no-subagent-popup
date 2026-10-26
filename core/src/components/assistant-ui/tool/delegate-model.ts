@@ -21,6 +21,11 @@ export interface DelegateRow {
   /** Exact runtime child identity from the persisted dispatch, never inferred from a goal. */
   subagentId?: string
   status: DelegateRowStatus
+  activityPhase?: SubagentProgress['activityPhase']
+  activitySince?: number
+  updatedAt?: number
+  waitTimeoutSeconds?: number
+  currentTool?: string
 }
 
 /**
@@ -115,7 +120,12 @@ function fromSubagent(live: SubagentProgress, fallbackId: string, fallbackGoal: 
     model: live.model,
     sessionId: live.sessionId || fallbackSessionId,
     subagentId: live.id,
-    status: live.status
+    status: live.status,
+    activityPhase: live.activityPhase,
+    activitySince: live.activitySince,
+    updatedAt: live.updatedAt,
+    waitTimeoutSeconds: live.waitTimeoutSeconds,
+    currentTool: live.currentTool
   }
 }
 

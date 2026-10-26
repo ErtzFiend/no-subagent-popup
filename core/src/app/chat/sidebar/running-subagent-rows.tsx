@@ -8,6 +8,8 @@ import { $activeSessionId, $selectedStoredSessionId, $sessions, sessionOwnerRout
 import { $sessionStates, $sessionTiles } from '@/store/session-states'
 import { $subagentsBySession, buildSubagentTree, type SubagentNode } from '@/store/subagents'
 import type { SessionInfo } from '@/types/hermes'
+import { formatSubagentStatus } from '@/lib/subagent-status'
+import { useSubagentStatusClock } from '@/lib/use-subagent-status-clock'
 
 export function RunningSubagentRows({ session }: { session: SessionInfo }) {
   const all = useStore($subagentsBySession)
@@ -20,6 +22,7 @@ export function RunningSubagentRows({ session }: { session: SessionInfo }) {
   const ownerRoute = sessionOwnerRouteFromRow(session)
   const { children, runtimeId } = selectParentSubagents(session, sessions, states, tiles, activeId, selectedId, all)
   useSubagentSnapshot(runtimeId, children.length > 0)
+  const nowSeconds = useSubagentStatusClock(children.length > 0 && expanded)
   if (!children.length) return null
 
   const renderChildren = (nodes: SubagentNode[], depth = 0): React.ReactNode => nodes.map(({ children: nested, ...item }) => (
@@ -42,7 +45,7 @@ export function RunningSubagentRows({ session }: { session: SessionInfo }) {
       >
         <span aria-hidden="true" className="shrink-0 text-(--ui-text-tertiary)">◌</span>
         <span className="min-w-0 flex-1 truncate">{item.goal || 'Subagent'}</span>
-        <span className="shrink-0 text-[0.625rem] text-(--ui-text-tertiary)">{item.status}</span>
+        <span title={formatSubagentStatus(item, nowSeconds)} className="max-w-[55%] shrink-0 truncate text-[0.625rem] text-(--ui-text-tertiary)">{formatSubagentStatus(item, nowSeconds)}</span>
       </button>
       {renderChildren(nested, depth + 1)}
     </div>

@@ -1,0 +1,297 @@
+--- a/agent/chat_completion_helpers.py
++++ b/agent/chat_completion_helpers.py
+@@ -688,11 +688,59 @@
+     return min(timeout, max(60.0, remaining * 0.5))
+ 
+ 
++def _freellmapi_silence_timeout(agent) -> float | None:
++    """A strict route-only silence cap; LAN addresses and reasoning floors do not extend it."""
++    if getattr(agent, "provider", None) != "freellmapi":
++        return None
++    configured = get_provider_stale_timeout(agent.provider, agent.model)
++    return min(30.0, max(0.01, configured)) if configured is not None else 30.0
++
++
++def _useful_provider_chunk(chunk) -> bool:
++    """SSE keepalives, usage-only and role-only deltas are not model progress."""
++    def get(obj, key, default=None):
++        return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
++    for choice in get(chunk, "choices", []) or []:
++        if get(choice, "finish_reason"):
++            return True
++        delta = get(choice, "delta")
++        if any(get(delta, key) for key in ("content", "reasoning", "reasoning_content", "refusal")):
++            return True
++        for call in get(delta, "tool_calls", []) or []:
++            function = get(call, "function")
++            if get(call, "id") or get(function, "name") or get(function, "arguments"):
++                return True
++    return False
++
++
++def _set_provider_phase(agent, phase: str, timeout: float | None = None) -> None:
++    now = time.time()
++    changed = getattr(agent, "_provider_activity_phase", None) != phase
++    if changed:
++        last = getattr(agent, "_provider_last_progress_at", None)
++        agent._provider_activity_since = last if phase == "waiting_provider" and last else now
++    agent._provider_activity_phase = phase
++    agent._provider_wait_timeout_seconds = timeout
++    if phase == "streaming":
++        agent._provider_last_progress_at = now
++    # Real lifecycle changes reach the parent immediately; healthy deltas are
++    # coalesced to one progress event/second, never one frame per token.
++    if changed or now - getattr(agent, "_provider_phase_emitted_at", 0.0) >= 1.0:
++        agent._provider_phase_emitted_at = now
++        callback = getattr(agent, "tool_progress_callback", None)
++        if callable(callback):
++            with contextlib.suppress(Exception):
++                callback("subagent_progress", activity_phase=phase,
++                    activity_since=agent._provider_activity_since,
++                    last_progress_at=getattr(agent, "_provider_last_progress_at", None),
++                    wait_timeout_seconds=timeout)
++
++
+ def _cloud_stale_timeout_for(agent, api_kwargs: dict) -> float:
+-    """An explicit ``providers.<id>.stale_timeout_seconds`` is the operator's deadline and
+-    wins over every implicit floor — the context-size tier as well as the reasoning-model
+-    floor — so it can SHORTEN patience for a hung stream (#115024). Only the 180s default
+-    is scaled and floored."""
++    """Route-specific no-useful-data watchdog; contentless SSE must not extend patience."""
++    policy = _freellmapi_silence_timeout(agent)
++    if policy is not None:
++        return policy
+     explicit = get_provider_stale_timeout(agent.provider, agent.model)
+     if explicit is not None:
+         return explicit
+@@ -2938,8 +2986,13 @@
+ 
+     def _count_chunk(self, diag, chunk) -> None:
+         """Stamp liveness for a real chunk; diagnostics are best-effort."""
+-        self.last_chunk_time["t"] = time.time()
+-        self.agent._touch_activity("receiving stream response")
++        useful = _useful_provider_chunk(chunk)
++        if _freellmapi_silence_timeout(self.agent) is None or useful:
++            self.last_chunk_time["t"] = time.time()
++            self._useful_progress_monotonic = time.monotonic()
++            self.agent._touch_activity("receiving stream response")
++        if useful:
++            _set_provider_phase(self.agent, "streaming", _freellmapi_silence_timeout(self.agent))
+         with contextlib.suppress(Exception):
+             diag["chunks"] = int(diag.get("chunks", 0)) + 1
+             if diag.get("first_chunk_at") is None:
+@@ -2961,6 +3014,10 @@
+         HERMES_STREAM_READ_TIMEOUT (120s); connect/pool cover the handshake, not
+         inference: 30s, or capped at 60s when configured."""
+         cfg = get_provider_request_timeout(self.agent.provider, self.agent.model)
++        policy = _freellmapi_silence_timeout(self.agent)
++        if policy is not None:
++            budget = min(policy, cfg) if cfg is not None else policy
++            return budget, budget, budget
+         base = cfg if cfg is not None else env_float("HERMES_API_TIMEOUT", 1800.0)
+         if cfg is not None:
+             return base, cfg, min(base, 60.0)
+@@ -3065,7 +3122,9 @@
+             return False
+         # Stamp BEFORE Relay processes the chunk so the watchdog can't cancel
+         # a live stream mid-interceptor.
+-        self.last_chunk_time["t"] = time.time()
++        if _freellmapi_silence_timeout(self.agent) is None or _useful_provider_chunk(chunk):
++            self.last_chunk_time["t"] = time.time()
++            self._useful_progress_monotonic = time.monotonic()
+         return True
+ 
+     def _writer_still_current(self, label: str) -> bool:
+@@ -3623,6 +3682,17 @@
+             logger.debug("Streaming worker caught %s after request cancellation — exiting without retry.", type(e).__name__)
+             return False
+         _is_timeout = isinstance(e, (_httpx.ReadTimeout, _httpx.ConnectTimeout, _httpx.PoolTimeout))
++        if _freellmapi_silence_timeout(self.agent) is not None and (
++            isinstance(e, (TimeoutError, _httpx.TimeoutException))
++            or type(e).__name__ == "APITimeoutError"
++            or bool(self._stale_counted_attempts)
++            or getattr(self, "_silence_deadline_expired", False)
++        ):
++            self.result["error"] = TimeoutError(
++                f"FreeLLMAPI produced no meaningful response data within {self._stream_stale_timeout:g}s; request cancelled."
++            )
++            _set_provider_phase(self.agent, "working")
++            return False
+         # ReadError: abort/reset mid-body (stale-kill shutdown under a parked reader,
+         # ECONNRESET) — the retry loop owns recovery.
+         # anthropic.APIConnectionError: the Anthropic SDK wraps connect/read drops
+@@ -3929,6 +3999,14 @@
+         HERMES_LOCAL_STREAM_STALE_TIMEOUT — an infinite one stalled sessions on a
+         crashed endpoint forever. Cloud values scale with context size and are
+         floored for known reasoning models (else BrokenPipeError from the gateway)."""
++        self.agent._provider_last_progress_at = None
++        policy = _freellmapi_silence_timeout(self.agent)
++        if policy is not None:
++            self._stream_stale_timeout = policy
++            self._useful_progress_monotonic = time.monotonic()
++            _set_provider_phase(self.agent, "waiting_provider", policy)
++            return
++        _set_provider_phase(self.agent, "waiting_provider")
+         base = _configured_stale_base(self.agent)
+         if base == 180.0 and self.agent.base_url and is_local_endpoint(self.agent.base_url):
+             self._stream_stale_timeout = _local_stream_stale_timeout_default()
+@@ -4022,6 +4100,7 @@
+             raise InterruptedError("Agent interrupted during streaming API call")
+         if self.agent._interrupt_requested:  # worker returned early before the monitor saw the flag
+             raise InterruptedError("Agent interrupted during streaming API call (post-worker)")
++        _set_provider_phase(self.agent, "working")
+         if self.result["error"] is not None:
+             if self.deltas_were_sent["yes"]:
+                 return self._partial_stream_stub()
+--- a/agent/chat_completion_stream_monitor.py
++++ b/agent/chat_completion_stream_monitor.py
+@@ -63,7 +63,8 @@
+             load_notice_shown=False, load_notice_misses=0, wait_notice_started_ts=None,
+             wait_notice=wn.WaitNoticeState(),
+         )
+-        _is_local_base = bool(self.agent.base_url) and is_local_endpoint(self.agent.base_url)
++        _silence_policy = getattr(self.agent, "provider", None) == "freellmapi"
++        _is_local_base = not _silence_policy and bool(self.agent.base_url) and is_local_endpoint(self.agent.base_url)
+         while not self._call_done.is_set():
+             self._call_done.wait(timeout=0.3)
+             _hb_now = time.time()
+@@ -79,8 +80,16 @@
+             if _hb_now - self._mon.last_heartbeat >= _HEARTBEAT_INTERVAL:
+                 self._mon.last_heartbeat = _hb_now
+                 self._heartbeat(int(_hb_now - self.last_chunk_time["t"]))
+-            _stale_elapsed = time.time() - self.last_chunk_time["t"]
++            _stale_elapsed = (time.monotonic() - self._useful_progress_monotonic
++                if _silence_policy else time.time() - self.last_chunk_time["t"])
++            if _stale_elapsed >= 1.0:
++                from agent.chat_completion_helpers import _set_provider_phase
++                _set_provider_phase(self.agent, "waiting_provider", self._stream_stale_timeout if _silence_policy else None)
+             if _stale_elapsed > self._stream_stale_timeout:
++                if _silence_policy:
++                    # Fence retries BEFORE aborting a socket: its reader can wake
++                    # before _kill_stale_stream finishes recording the stale attempt.
++                    self._silence_deadline_expired = True
+                 self._mon.wait_notice_started_ts = None  # Reconnect status has its own owner.
+                 self._mon.wait_notice.reset()
+                 self._kill_stale_stream(_stale_elapsed)
+--- a/apps/shared/src/gateway-contract.generated.ts
++++ b/apps/shared/src/gateway-contract.generated.ts
+@@ -4867,6 +4867,10 @@
+   summary?: string | null
+   duration_seconds?: number | null
+   tool_preview?: string | null
++  activity_phase?: 'working' | 'waiting_provider' | 'streaming' | null
++  activity_since?: number | null
++  last_progress_at?: number | null
++  wait_timeout_seconds?: number | null
+ }
+ /** ``tools/delegate_tool_results.py::_extract_output_tail`` row. */
+ export interface SubagentOutputTailEntry {
+--- a/apps/shared/src/gateway-contract.openrpc.json
++++ b/apps/shared/src/gateway-contract.openrpc.json
+@@ -35336,6 +35336,59 @@
+             ],
+             "default": null,
+             "title": "Tool Preview"
++          },
++          "activity_phase": {
++            "anyOf": [
++              {
++                "enum": [
++                  "working",
++                  "waiting_provider",
++                  "streaming"
++                ],
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "default": null,
++            "title": "Activity Phase"
++          },
++          "activity_since": {
++            "anyOf": [
++              {
++                "type": "number"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "default": null,
++            "title": "Activity Since"
++          },
++          "last_progress_at": {
++            "anyOf": [
++              {
++                "type": "number"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "default": null,
++            "title": "Last Progress At"
++          },
++          "wait_timeout_seconds": {
++            "anyOf": [
++              {
++                "type": "number"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "default": null,
++            "title": "Wait Timeout Seconds"
+           }
+         },
+         "required": [
+--- a/tools/delegate_tool_progress.py
++++ b/tools/delegate_tool_progress.py
+@@ -383,6 +383,11 @@
+     def _on_progress(self, tool_name, preview, args, kwargs):
+         # Pre-batched summary from a nested orchestrator's grandchild arrives in the tool_name slot: render distinctly
+         # (no tool-emoji lookup) and relay upward without re-batching.
++        if kwargs.get("activity_phase") in {"working", "waiting_provider", "streaming"}:
++            self._relay("subagent.progress", **{key: kwargs[key] for key in (
++                "activity_phase", "activity_since", "last_progress_at", "wait_timeout_seconds"
++            ) if kwargs.get(key) is not None})
++            return
+         summary_text = tool_name or preview or ""
+         if summary_text:
+             self._tree_line(f"🔀 {summary_text}")
+--- a/tui_gateway/contracts/events.py
++++ b/tui_gateway/contracts/events.py
+@@ -14,6 +14,8 @@
+ """
+ 
+ from __future__ import annotations
++
++from typing import Literal
+ 
+ from pydantic import Field
+ 
+@@ -508,6 +510,10 @@
+     summary: str | None = None
+     duration_seconds: float | None = None
+     tool_preview: str | None = None
++    activity_phase: Literal["working", "waiting_provider", "streaming"] | None = None
++    activity_since: float | None = None
++    last_progress_at: float | None = None
++    wait_timeout_seconds: float | None = None
+ 
+ 
+ for _name, _doc in (
+--- a/tui_gateway/tool_progress.py
++++ b/tui_gateway/tool_progress.py
+@@ -447,6 +447,8 @@
+     ("files_read", bool, _str_list), ("files_written", bool, _str_list), ("output_tail", bool, list),
+     ("tool_name", bool, str), ("text", bool, str), ("status", bool, str), ("summary", bool, str),
+     ("duration_seconds", _not_none, float),
++    ("activity_phase", bool, str), ("activity_since", _not_none, float),
++    ("last_progress_at", _not_none, float), ("wait_timeout_seconds", _not_none, float),
+ )
+ 
+ 

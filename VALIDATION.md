@@ -1,33 +1,31 @@
-# v0.1.3 validation status
+# v0.2.0 verification record
 
-Source preview, not a deployed or signed release.
+## Executed checks
 
-## Verified in this refactor
+- Desktop full TypeScript typecheck passed against a separate Windows worktree.
+- **56 UI/history tests across 6 files passed**, including 8 new fake-clock/store tests for ticking provider waits, shared timer cleanup, inactive views, overdue-but-not-failed state, legacy/no-budget fallback, stale last-update age and route-budget reset.
+- **18 dependency-free project tests passed**; plugin and source-patch syntax checks passed.
+- All **23 desktop overlay files** passed check/apply/check/revert/check against pinned upstream source. Backend **7-file** source overlay also passed check/apply/check/revert/check against its exact installed-source baseline.
+- **14 Python regression/wire tests passed**: production 30-second policy selection; non-FreeLLMAPI isolation; meaningful/empty/role/reasoning/tool deltas; end-to-end phase relay/wire validation; real HTTP/SSE hanging headers, silent body, comments-only heartbeat and role-only streams; no hidden inner retry after timeout; healthy streaming beyond the accelerated silence threshold; existing socket-unwedge and interrupt regressions.
+- Windows full build and unpacked Electron packaging succeeded. Packaged renderer includes all required patch markers, including `no-subagent-popup@0.2.0`; complete inventory contains **1,173 files**. This local package is unsigned.
+- Owner-guard mutation tests from v0.1.3 deliberately failed cross-owner collision assertions as expected.
 
-- Full desktop TypeScript typecheck passed in a separate Windows worktree at the pinned upstream commit.
-- Targeted Vitest UI/history suite: **48 tests passed across 5 files**. Includes 6 new deduplication hook/component cases, 9 dotted-row tests, 13 existing session-row tests, 12 history tests and 8 delegation-card tests.
-- Dependency-free project suite: **18 tests passed**, including 7 new pure deduplication cases.
-- Plugin and patch-script syntax checks passed.
-- All **19 overlay files** were checked, applied, checked again, reverted and checked against the actual pinned upstream source. Updated source checksum manifest and unified patch were generated from that source.
-- Owner-guard mutation check: deliberately removing owner isolation caused the cross-connection and cross-profile tests to fail. The mutant was not shipped.
-- Source scan before initial publication found no credential, private-key, private-IP or personalized Windows-path matches.
+## Installed/configured versus active
 
-## What changed
+- Installed configuration enables `delegation.independent_completions`; a real subsequent dispatch produced separate completion units. Existing batches are not regrouped.
+- Effective installed getters for FreeLLMAPI/auto request/stale budgets both returned **30.0**, after lowering the existing 300-second per-model overrides as well as provider defaults.
+- Seven backend source files were installed only after exact before-hash checks, with original source backups and exact after-hash readback. A fresh compatible Python process imported the installed policy and wire schema successfully.
+- The older running dashboard process has **not** been restarted/rolled over in this verification record; its cached Python imports are not claimed to be updated.
+- Local desktop installation preflight explicitly refused because Hermes was still running. No GUI process was killed or launched over SSH. A user-invoked updater is staged locally; packaged build success is not installation success.
 
-The dotted-row renderer and ordinary-session filter now share `selectParentSubagents`. The list filter requires an exact child transcript/lineage ID and matching connection/profile. Filtering happens before branch flattening, grouping and virtualization in all four section rendering paths. Collapsing the dotted group does not reveal the duplicate tree row. Plugin disable restores ordinary rows. Child-only search lists and unrelated sessions remain accessible.
+## Open / not claimed
 
-Terminal children leave the dotted live group. Saved sessions are not deleted or globally hidden and can remain in the ordinary history list once no dotted row represents them.
+- Live desktop installation, backend runtime rollover and actual installed-app visual acceptance remain pending.
+- The plugin ZIP alone does not patch stock Desktop; a compatible built core is required.
+- Historical completed cards lacking saved exact session mappings remain unresolved.
+- Any normal 1-of-2 partial batch must stay running while its sibling works. No abandoned-worker recovery change is accepted without negative tests proving that rule and live-owner protection.
+- No claim of generalized performance/load testing, real OS window-count verification or a signed public installer.
 
-## Build verification
+## Test scope and warnings
 
-- The additional `sessions-section` regression test run passed, followed by the isolated desktop renderer/main/preload build and `assert-dist-built` integrity check (exit 0).
-
-## Open
-- No packaged v0.1.3 installer or signed release has been produced.
-- No running GUI was stopped/replaced. Live installed-app visual acceptance remains pending.
-- Historical completed cards without exact saved mappings remain a separate unresolved issue. The separate backend/frontend contract candidate is not silently included as a completed fix.
-- Long-list performance, extended offline/reconnect behavior and real OS window counts remain unverified.
-
-## Test limitations
-
-The UI suite exercises real React components/hooks with controlled stores and mocked navigation/snapshot bridges; it does not prove a real installed Electron window loaded the changes. Node emitted an experimental localStorage warning, and existing session-row tests emitted React `act(...)` warnings; all listed assertions passed.
+React tests use controlled stores and mocked navigation/snapshot bridges. SSE tests use real local servers and accelerated thresholds rather than waiting 30 seconds per case. Existing React act/localStorage warnings were present but all listed assertions passed. Tests initially detected a socket-close/retry race; the deadline now fences retries before transport teardown. A wrong-Python ABI in the scratch harness was corrected by using the compatible managed Python interpreter; production dependencies were not altered.

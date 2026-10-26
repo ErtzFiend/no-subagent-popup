@@ -7,11 +7,11 @@
     },
     "src/app/chat/sidebar/running-subagent-rows.tsx": {
       "before": null,
-      "after": "9616005bfe899b55a1ddd050b49f48c84d863feda1b276d09f6f7f9011e2254d"
+      "after": "6f4f3c3774e0ba0da5f419a6dd7f86e0b62c9fc40568221090f95b32ae05e1d0"
     },
     "src/app/chat/sidebar/session-row.tsx": {
       "before": "6bbb484972a203a533175b2597c7a5205f5792ca46115a043ac89e471545f3c1",
-      "after": "16beffad475d4872784ee4eb2286272020c564c3a96a70077ea3d6befb7b7243"
+      "after": "57ec49cd39905123345439ce5429e772387b50cd10a43fed5fe311a68920066d"
     },
     "src/app/session/hooks/use-session-actions/index.ts": {
       "before": "df52951c1e79d70645d04c284a12f612bc2cd75930e2946dc2c5b8f6b56fbbf7",
@@ -23,7 +23,7 @@
     },
     "src/components/assistant-ui/tool/delegate.tsx": {
       "before": "3ca6631933fb84fa8bf83bb2121f67da04e4e06a34929617f863379a3c1903a8",
-      "after": "a39ae835d8c2c135958f524fd7b5b581b8307751231fa5400e5ab6ce7fd02735"
+      "after": "668c73bff322660dc404fab869fb50bf4088050611965a4496da1886db267deb"
     },
     "src/lib/no-subagent-popup-model.ts": {
       "before": null,
@@ -51,7 +51,7 @@
     },
     "src/components/assistant-ui/tool/delegate-model.ts": {
       "before": "132f057d166a476b63715a7134229b98825dfda9e60b25956063c399bf0bcc2e",
-      "after": "326c4c6625d8498113515e5b383601ad4caf9d260a319c579954b616893b9139"
+      "after": "3e99930a2bdff29d95c2b2b8d02c7b5780e18f7a47a30ee40a12cbb414ff6ed4"
     },
     "src/lib/no-subagent-popup-history-runtime.ts": {
       "before": null,
@@ -76,6 +76,22 @@
     "src/app/chat/sidebar/sessions-section.tsx": {
       "before": "154f937b73d8e30125c2f8a6507960163efc71c7d8a5b53a7ff9bd6ac1ca69b9",
       "after": "51f65f1c45bc285d8a8caffd7269e266feb7177f5400ba98a0e88491ceab578b"
+    },
+    "src/store/subagents.ts": {
+      "before": "b2c37d57308fe66051fb79d903ce3b86ea031c36cb9030771d12e1fb2afdb0f2",
+      "after": "d76fa27f91c65c07beee5598c7e10b41a227211e13f690b333c2ebf30e0a0c32"
+    },
+    "src/lib/subagent-status.test.tsx": {
+      "before": null,
+      "after": "23b9317f4bf3d463964dbc4867382b8c1f966cb1d727e8a1b85fe3a0171e1463"
+    },
+    "src/lib/use-subagent-status-clock.ts": {
+      "before": null,
+      "after": "81d30a946dfa3f8fcd45cffa93445f406c0f40f6e4acda007c457fa3aaac22ff"
+    },
+    "src/lib/subagent-status.ts": {
+      "before": null,
+      "after": "03d90a7bb04098fc8bef55675bad30d905d04c73c089007dcc9b72d912f7a42d"
     }
   }
 }

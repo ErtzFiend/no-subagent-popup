@@ -18,7 +18,7 @@ const entry = scripts.find(p=>p.startsWith('assets/index-')) || scripts[0]
 const entryPath = files.find(p=>p.replaceAll('\\','/') === `dist/${entry}`)
 if (!entryPath) throw Error('Packaged renderer script missing from ASAR header')
 const text = asar.extractFile(archive,entryPath).toString('utf8')
-const markers = ['session.noSubagentPopup','sidebar-live-subagents','sidebar-running-subagent','hermes.no-subagent-popup.watch','no-subagent-popup@0.1.3']
+const markers = ['session.noSubagentPopup','sidebar-live-subagents','sidebar-running-subagent','hermes.no-subagent-popup.watch','no-subagent-popup@0.2.0']
 const markerFiles = {}
 for (const file of files.filter(p=>p.replaceAll('\\','/').startsWith('dist/assets/') && p.endsWith('.js'))) {
   const contents=asar.extractFile(archive,file).toString('utf8')

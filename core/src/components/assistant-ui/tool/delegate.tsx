@@ -15,6 +15,8 @@ import { AlertCircle, CheckCircle2 } from '@/lib/icons'
 import { displayModelName } from '@/lib/model-status-label'
 import { useSessionSlice } from '@/lib/use-session-slice'
 import { cn } from '@/lib/utils'
+import { formatSubagentStatus } from '@/lib/subagent-status'
+import { useSubagentStatusClock } from '@/lib/use-subagent-status-clock'
 import { useNoSubagentPopup } from '@/lib/no-subagent-popup'
 import { openSubagentInCurrentWindow } from '@/lib/open-subagent-in-current-window'
 import { restoreDelegateLinks } from '@/lib/no-subagent-popup-history'
@@ -76,6 +78,7 @@ function DelegateRowView({ row }: { row: DelegateRow }) {
   const { sessionId } = row
   const live = isDelegateRowLive(row.status)
   const elapsed = useElapsedSeconds(live, `delegate:${row.id}`)
+  const nowSeconds = useSubagentStatusClock(live)
   const activity = row.activity.slice(-TICKER_DEPTH)
 
   const statusLabel = live
@@ -122,6 +125,7 @@ function DelegateRowView({ row }: { row: DelegateRow }) {
         {live && <ActivityTimerText className={cn(SCAFFOLD_META_CLASS, 'ml-auto')} seconds={elapsed} />}
         <Codicon className="ml-auto shrink-0 text-(--conversation-scaffold-text)" name="agent" size="0.625rem" />
       </div>
+      {(live || row.status === 'dispatched') && <div data-slot="subagent-activity-status" className="pl-5 text-xs text-(--ui-text-tertiary)">{formatSubagentStatus(row, nowSeconds)}</div>}
       {activity.length > 0 && (
         <div className="min-w-0 max-w-full pl-5">
           <ToolRunTicker>

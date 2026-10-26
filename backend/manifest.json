@@ -1,0 +1,34 @@
+{
+  "baseCommit": "1e0c7730d791f5ce855c5c78935cfea6fb1e43a9",
+  "note": "Exact installed-source baselines, including earlier local reliability changes; reject other versions rather than guessing.",
+  "files": {
+    "agent/chat_completion_helpers.py": {
+      "before": "fbd79987a8257f79de6ed291d398f455456385f828631dd8d9d0e6cea3ba46f2",
+      "after": "cd548fa2030aa6c605c8ed184813d2c25c8ada1ed09dc2df4b33c669d8cbc35a"
+    },
+    "agent/chat_completion_stream_monitor.py": {
+      "before": "8c232eb9e90335ce599b5c8d403c6e369e3fb9e01e78d4a178c517b62da420c5",
+      "after": "bee262a7e14da2921a6322378ba634d57b4303138338b025e5e35005f784cd46"
+    },
+    "apps/shared/src/gateway-contract.generated.ts": {
+      "before": "7d8b011ed9af1c567e4abf56a684568d24caec533b89353fc6bec5486dbb2688",
+      "after": "0784a7df5c43f0e9573a712f11b77813bfab4d3ab36f3c67d75f951457815e10"
+    },
+    "apps/shared/src/gateway-contract.openrpc.json": {
+      "before": "44cede7df5a2b72d1b94988e90cebdd36509a36b83f5ebbd2661e43f162beed3",
+      "after": "f8344d6cb900e54a5a83d2d22e1307805dede70ddb4b307b22283f11db9815b8"
+    },
+    "tools/delegate_tool_progress.py": {
+      "before": "ce16529e606952491bcdaab7ebd8ae7090c97b7b7017e1cb312e998575eedcbd",
+      "after": "24c6b3d382e2d1b18ab659c6943b18db1593814ed1d3d7c8f16bca5e6026ea30"
+    },
+    "tui_gateway/contracts/events.py": {
+      "before": "48f15ac843abe9b2cf25761e8dce6903114bfa76a3b2c3c3621f416b0b0fa952",
+      "after": "fa39e1d4322670094aeb35d65d3a91cbf396ca6db6ad110d5792f2d1c76d8c25"
+    },
+    "tui_gateway/tool_progress.py": {
+      "before": "6fe22c0761ae2537b93323b1e8e09d4b087a474ff5276d254f0d2a81b8f44d6e",
+      "after": "6767960b2d0ea5469d2fe51275a2b42fd92b4c7c02b3f06af310d5b0508abc9b"
+    }
+  }
+}

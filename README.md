@@ -1,75 +1,79 @@
-# No Subagent Popup
+# No Subagent Popup — v0.2.0
 
-A version-checked Hermes Desktop refactor with a companion desktop plugin.
+Hermes Desktop companion patch and plugin for dotted live subagents, same-window read-only viewing, and truthful activity status.
 
-> **v0.1.3 source preview — not a verified installed release.** Duplicate live-child tree rows are filtered while preserving the dotted entries. Typechecking, 48 UI/history tests, 18 project tests and source apply/revert checks passed. The isolated desktop renderer/main/preload build and post-build integrity check passed. Your running app has not been replaced. Historical completed cards without saved child-session links remain unresolved.
+[Project](https://github.com/ErtzFiend/no-subagent-popup) · [Releases](https://github.com/ErtzFiend/no-subagent-popup/releases) · [Changelog](CHANGELOG.md) · [Verification](VALIDATION.md)
 
-Project: https://github.com/ErtzFiend/no-subagent-popup (private development repository).
+## What changed
 
-## Intended behavior
+- Keep one dotted live-child list beneath each parent. Suppress duplicate ordinary tree rows only when exact transcript identity and connection/profile agree.
+- Show **working**, active tool, **streaming**, or **waiting on provider** with an elapsed counter and an authoritative timeout budget when reported.
+- One shared one-second clock updates visible live statuses without requiring another server event. It stops when no live status views remain.
+- Show old progress as **last update N seconds ago**, not a fabricated dead/failed worker. A missing backend budget never implies a 30-second policy.
+- Keep same-window read-only child navigation and live-group completion cleanup. Saved sessions are not deleted or globally hidden.
 
-- Live (`running` or `queued`) delegated children appear in collapsible dropdowns immediately beneath their own parent in the main Sessions sidebar.
-- While a live child has a dotted entry under a parent in the same list, its duplicate ordinary tree row is suppressed. Matching requires exact child transcript identity and the same connection/profile; orphaned search results and unrelated sessions are retained.
-- Completed, failed and interrupted children leave the dotted live group automatically. Their saved session/history remains accessible through the normal session list where available.
-- Clicking either a sidebar child or an existing delegation card opens the child's transcript **in the current pane/window**.
-- Child viewing remains **read-only**: the existing spectator/lazy-resume path is retained, not a second agent run. Parent conversations keep their cached state.
-- Disable the companion plugin to restore the original sidebar and popup behavior. Already-open spectators remain read-only for safety.
+## Plugin download versus core patch
 
-## Why a companion patch?
+The installed SDK does not expose the required sidebar and existing-card interception hooks. The companion patch adds the explicit `session.noSubagentPopup` registry area; `plugin.js` enables it through the normal plugin lifecycle. **The plugin alone cannot patch an unmodified desktop.**
 
-The installed SDK has neither a child-row slot nor a delegate-card click interception hook. `host.openSession` alone cannot override those existing core handlers. This project does not pretend such SDK hooks exist and does not mutate the DOM or monkey-patch Electron.
+Release assets include the companion plugin ZIP, a complete source ZIP, and SHA-256 checksums. The plugin ZIP contains `no-subagent-popup/plugin.js`; place that directory under the desktop's configured `desktop-plugins` directory **after building/installing the companion core patch**. Disable the plugin to restore ordinary sidebar/popup behavior; already-open spectators remain read-only.
 
-The patch adds the explicit registry area `session.noSubagentPopup`. The plugin contributes `{ enabled: true }` to that area; disabling/unloading it removes the contribution through the normal plugin lifecycle. **Installing plugin.js into an unpatched desktop does nothing.**
+## Desktop source
 
-Target upstream commit: `12e4d3e2dd5281adf289f70e5d6c7f33427d6982`. Other versions are rejected by normalized source hashes instead of guessed patches.
-
-## Layout
-
-- `plugin.js`: dependency-free companion plugin.
-- `core/`: exact changed/new desktop source files, including actual React component tests.
-- `patches/desktop.patch`: reviewable unified patch against the target upstream commit.
-- `manifest.json`: before/after SHA-256 checksums for safe application.
-- `scripts/patch-desktop.mjs`: checked apply/revert tool, with original source preserved outside Git tracking.
-- `tests/`: model/plugin/spectator tests plus real-browser integration fixture.
-- `VALIDATION.md`: verified results and explicitly pending checks.
-- `GITHUB-PREP.md`: proposed repository/release details; no remote is created automatically.
-
-## Development
-
-Requires Node 22.18+ (Windows build validated using Node 26) and the target Hermes checkout's existing dependencies.
+Pinned upstream: `12e4d3e2dd5281adf289f70e5d6c7f33427d6982`. Exact normalized source hashes reject unsupported or locally modified files rather than guessing.
 
 ```sh
 npm test
 npm run check
 node scripts/patch-desktop.mjs check /path/to/hermes-agent
 node scripts/patch-desktop.mjs apply /path/to/hermes-agent
-# In the modified checkout/apps/desktop:
+# In that checkout/apps/desktop:
 npm run typecheck
-# Targeted tests:
-npx vitest run --project ui src/app/chat/sidebar/running-subagent-rows.test.tsx src/lib/open-subagent-in-current-window.test.ts src/components/assistant-ui/tool/delegate-no-popup.test.tsx src/app/chat/sidebar/session-row.test.tsx
+npx vitest run --project ui src/lib/subagent-status.test.tsx src/app/chat/sidebar/parent-subagents.test.tsx src/app/chat/sidebar/running-subagent-rows.test.tsx src/app/chat/sidebar/session-row.test.tsx src/lib/no-subagent-popup-history.test.ts src/components/assistant-ui/tool/delegate-no-popup.test.tsx
 npm run build
-# To restore source:
+# Source rollback:
 node scripts/patch-desktop.mjs revert /path/to/hermes-agent
 ```
 
-Apply is idempotent. All candidate files are checked before any overwrite. Modified/unsupported source and modified patched files are refused. A source rollback state file is stored at the target repository root; do not delete it before reverting.
+Requires Node 22.18+ and the pinned checkout's desktop dependencies. Build in a separate worktree. The guarded Windows installer requires that separately built package, its generated full inventory, and the previous installed inventory. Fully exit Hermes, including the tray icon, before installation. Nothing here authorizes killing a user's GUI or launching it from SSH. Local Windows packages are unsigned; no signed general-purpose installer is included in the plugin download.
 
-## Installation safety
+## Optional backend companion
 
-The deployed application is a packaged Windows build, not a live Vite source checkout. Source changes by themselves do not update its renderer. Build and validate in a separate worktree; package the renderer into a staged archive; then use the guarded installer while Hermes is **fully exited**, including the tray icon. It backs up and verifies the exact installed archive and plugin. No GUI processes are killed or launched from SSH.
+`backend/` adds a FreeLLMAPI-only **30-second no-meaningful-data cap**, request socket limits, and optional phase/progress events. Content, reasoning and tool-call data count as progress; role-only/empty chunks and SSE keepalives do not extend the deadline. Healthy streaming may last longer than 30 seconds. A timed-out stream is cancelled without the inner stream retry loop silently opening another attempt; existing outer failure/fallback handling remains responsible for recovery. Partial tool calls are not replayed.
 
-The project must not be called installed/working until the packaged app is reopened normally by the user and the two interactions are verified there. Automated tests and an integration fixture are evidence about the build, not proof that the user's existing window has loaded it.
+Backend configuration uses existing Hermes keys:
 
-## Prepared Windows installer
+```yaml
+providers:
+  freellmapi:
+    request_timeout_seconds: 30
+    stale_timeout_seconds: 30
+    models:
+      auto:
+        timeout_seconds: 30
+        stale_timeout_seconds: 30
+delegation:
+  independent_completions: true
+```
 
-The guarded installer is `scripts/install-windows.ps1`, with source and binary rollback tools included. It requires a separately built and verified candidate package plus the correct previous installed inventory. Fully exit Hermes, including its tray icon, before installing. These scripts are not a self-contained downloadable installer and never authorize killing or restarting a running GUI from SSH.
+Per-model overrides win, so check the effective getters rather than only the provider-level YAML. Independent completions affects new dispatches, not batches already running. Explicit task groups remain grouped.
 
-Do not delete the separate staged worktree/package until installation and live validation are complete. The local Windows package is unsigned. The existing installed archive is version/hash-pinned; if it updates before installation, the installer refuses to overwrite it.
+The backend baseline is separately version/hash-checked and includes earlier local reliability work; it is **not a universal patch for arbitrary Hermes checkouts**:
 
-## Limitations
+```sh
+node scripts/patch-backend.mjs check /path/to/hermes-agent
+node scripts/patch-backend.mjs apply /path/to/hermes-agent
+# Safely drain and roll over/restart that backend to activate imported Python changes.
+# Source rollback, where this tool created the backup state:
+node scripts/patch-backend.mjs revert /path/to/hermes-agent
+```
 
-The companion patch must be reapplied/revalidated after upstream desktop updates. Child visibility uses the existing live event store and snapshot RPC; an unbound/offline session has no trustworthy live roster and is not guessed. The read-only watch marker is per-window session storage, so it survives renderer reloads, not a wholly new application window.
+The patch tool never restarts services. Disk installation and a fresh-process import check do not prove an older running process loaded new code. Without backend activity fields, the UI keeps generic status/last-update age; it does not invent provider waits.
+
+## Verification and limits
+
+See `VALIDATION.md` for executed checks and open deployment/activation requirements. This is an unsigned preview pending live installed-app acceptance. Historical completed cards with no saved exact child-session link remain a separate known limitation. Source publication, passing tests and an isolated package build are not claims of live UI acceptance.
 
 ## License
 
-Companion code and patch additions are MIT. Modified upstream files retain Hermes' original MIT licensing; see `LICENSE` and `UPSTREAM-LICENSE`.
+MIT for additions. Modified upstream files retain Hermes' original MIT licensing; see `LICENSE` and `UPSTREAM-LICENSE`.
