@@ -2,7 +2,7 @@
 
 A version-checked Hermes Desktop refactor with a companion desktop plugin.
 
-> **v0.1.3 source preview — not a verified installed release.** Duplicate live-child tree rows are filtered while preserving the dotted entries. Typechecking, 48 UI/history tests, 18 project tests and source apply/revert checks passed. An isolated desktop build is in progress. Your running app has not been replaced. Historical completed cards without saved child-session links remain unresolved.
+> **v0.1.3 source preview — not a verified installed release.** Duplicate live-child tree rows are filtered while preserving the dotted entries. Typechecking, 48 UI/history tests, 18 project tests and source apply/revert checks passed. The isolated desktop renderer/main/preload build and post-build integrity check passed. Your running app has not been replaced. Historical completed cards without saved child-session links remain unresolved.
 
 Project: https://github.com/ErtzFiend/no-subagent-popup (private development repository).
 

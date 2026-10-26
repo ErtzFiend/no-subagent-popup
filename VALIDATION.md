@@ -18,9 +18,11 @@ The dotted-row renderer and ordinary-session filter now share `selectParentSubag
 
 Terminal children leave the dotted live group. Saved sessions are not deleted or globally hidden and can remain in the ordinary history list once no dotted row represents them.
 
-## In progress / open
+## Build verification
 
-- An isolated desktop build and additional session-section tests are running; success is not claimed yet.
+- The additional `sessions-section` regression test run passed, followed by the isolated desktop renderer/main/preload build and `assert-dist-built` integrity check (exit 0).
+
+## Open
 - No packaged v0.1.3 installer or signed release has been produced.
 - No running GUI was stopped/replaced. Live installed-app visual acceptance remains pending.
 - Historical completed cards without exact saved mappings remain a separate unresolved issue. The separate backend/frontend contract candidate is not silently included as a completed fix.
