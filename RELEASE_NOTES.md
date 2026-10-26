@@ -21,3 +21,9 @@ This is an **unsigned prerelease**. The local package is built, but installation
 Historical completed cards without saved exact child-session mappings remain a known limitation. Normal partial batches must not be completed or recovered prematurely. No claim of a signed general-purpose Windows installer or plugin-only UI injection.
 
 See CHANGELOG.md, README.md and VALIDATION.md for exact scope and instructions.
+
+
+## Optional reconciliation safety follow-up
+A later source revision adds a narrow owner-identity guard: a failed process-start probe no longer permits recovery of an existing owner. Partial batches and uncertain owners remain protected; confirmed exits/PID reuse recover without replaying tools. Sixteen temporary-DB/real-process regression checks passed. The installed source was backed up and read back, but the older running backend has not been rolled over.
+
+Download the supplementary **no-subagent-popup-reconciliation-v0.2.0-addon.zip** and **RECONCILIATION-SHA256SUMS** for this source-only addon. It has its own checked apply/revert script and does not replace the plugin or desktop package. The original v0.2.0 tag and original five downloads remain unchanged.

@@ -1,0 +1,25 @@
+--- a/tools/async_delegation.py
++++ b/tools/async_delegation.py
+@@ -252,8 +252,20 @@
+         return None
+ 
+     def alive(pid, started) -> bool:
+-        return bool(pid) and _pid_exists(int(pid)) and (
+-            started is None or start_time_fingerprints_match(started, get_process_start_time(int(pid)) or 0))
++        # This predicate means "protect from recovery", not proof of identity.
++        # Missing/unreadable fingerprints must never turn an existing process
++        # into a confirmed dead owner and steal its in-flight work.
++        if not pid:
++            return False
++        try:
++            if not _pid_exists(int(pid)):
++                return False
++            current = get_process_start_time(int(pid))
++            if started is None or current is None:
++                return True
++            return start_time_fingerprints_match(started, current)
++        except (OSError, TypeError, ValueError):
++            return True  # probe uncertainty: preserve; a later sweep may know more
+     return alive
+ 
+ 

@@ -1,5 +1,11 @@
 # Changelog
 
+## Post-v0.2.0 optional reconciliation follow-up — 2026-10-26
+- Preserve existing owners when their start-time fingerprint cannot be read; uncertainty is not permission to steal work.
+- Recover confirmed owner exits/PID reuse without tool replay.
+- Added a separately guarded source addon and 16 focused/existing regression checks.
+- Original v0.2.0 tag and original release downloads remain unchanged. The supplementary addon is a later source revision.
+
 ## v0.2.0 — 2026-10-26
 
 ### Added

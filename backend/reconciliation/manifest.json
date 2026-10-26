@@ -1,0 +1,9 @@
+{
+  "note": "Optional narrow reconciliation follow-up; independent of the v0.2.0 timeout overlay. Exact source hashes only.",
+  "files": {
+    "tools/async_delegation.py": {
+      "before": "208adb7c7a162cf033d2a54b27536b719a4093f76ec4316fecebcfb08f485b9c",
+      "after": "fad9e1c3e2926cc77cca65b33586cb894efcc44412f49941f66ac52d11ca7f14"
+    }
+  }
+}

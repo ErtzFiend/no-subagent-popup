@@ -29,3 +29,7 @@
 ## Test scope and warnings
 
 React tests use controlled stores and mocked navigation/snapshot bridges. SSE tests use real local servers and accelerated thresholds rather than waiting 30 seconds per case. Existing React act/localStorage warnings were present but all listed assertions passed. Tests initially detected a socket-close/retry race; the deadline now fences retries before transport teardown. A wrong-Python ABI in the scratch harness was corrected by using the compatible managed Python interpreter; production dependencies were not altered.
+
+## Post-release reconciliation follow-up
+
+A real owner-theft risk was reproduced against the previously installed source: a known stored fingerprint plus a failed current start probe returned unprotected despite a live PID. The narrow guard now preserves uncertainty. **16 reconciliation tests passed** (10 new temporary-DB cases and 6 existing real-process delivery/orphan checks). The earlier subprocess failures were test-harness dependency-path failures, corrected only in scratch; production dependencies were not changed. The narrow source change was deployed with an exact before-hash check, original backup, and exact after-hash readback. It has not been activated in the older running dashboard process. See backend/reconciliation/README.md. The original v0.2.0 tag/assets are not rewritten.
